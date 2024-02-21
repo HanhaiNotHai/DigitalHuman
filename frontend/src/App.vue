@@ -1,15 +1,9 @@
-<script>
-export default {
-  data() {
-    return {
-      message: 'Hello World!'
-    }
-  }
-}
+<script setup>
+import { RouterView } from 'vue-router'
 </script>
 
 <template>
-  <h1>{{ message }}</h1>
+  <RouterView />
 </template>
 
-<style></style>
+<style scoped></style>
