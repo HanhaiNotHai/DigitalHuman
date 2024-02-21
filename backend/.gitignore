@@ -1,3 +1,8 @@
+pretrained_models/
+results/
+sentence-transformers/
+test*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
