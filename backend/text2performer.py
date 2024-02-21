@@ -15,45 +15,63 @@ from utils.options import parse
 
 class Text2Performer:
     def __init__(self) -> None:
+        # 初始化结果目录
         self.results_dir = './results'
+        # 如果结果目录不存在，则创建
         os.makedirs(self.results_dir, exist_ok=True)
 
+        # 初始化外观文件数量
         self.num_appearance_file = f'{self.results_dir}/num_appearance'
+        # 如果外观文件存在，则加载文件中的外观数量
         if os.path.exists(self.num_appearance_file):
             with open(self.num_appearance_file, 'rb') as f:
                 self.num_appearance = pickle.load(f)
         else:
+            # 如果外观文件不存在，则初始化外观数量为-1，并保存到文件中
             self.num_appearance = -1
             self.save_num_appearance()
 
+        # 创建外观模型
         self.app_model: AppTransformerModel = create_model(
             parse('./configs/sampler/sampler_high_res.yml')
         )
+        # 加载外观模型的网络
         self.app_model.load_network()
 
+        # 创建运动模型
         self.motion_model: VideoTransformerModel = create_model(
             parse('./configs/video_transformer/video_trans_high_res.yml')
         )
+        # 加载运动模型的网络
         self.motion_model.load_network()
 
-    def save_num_appearance(self):
+    def save_num_appearance(self) -> None:
         with open(self.num_appearance_file, 'wb') as f:
             pickle.dump(self.num_appearance, f, pickle.HIGHEST_PROTOCOL)
 
-    def load_raw_image(self, img_path, downsample=False):
+    def load_raw_image(self, img_path: str, downsample: bool = False) -> Image.Image:
+        """
+        加载原始图像
+
+        参数:
+            img_path (str): 图像路径
+            downsample (bool, optional): 是否进行下采样，默认为False
+
+        返回:
+            Image.Image: 加载的图像
+        """
         with open(img_path, 'rb') as f:
             image = Image.open(f)
             if downsample:
-                width, height = image.size
-                width = width // 2
-                height = height // 2
-                image = image.resize(size=(width, height), resample=Image.LANCZOS)
+                image = image.resize(
+                    (image.width // 2, image.height // 2), resample=Image.LANCZOS
+                )
             else:
                 image = image.copy()
 
         return image
 
-    def inter_sequence_inter(self, first_seq_idx, second_seq_idx):
+    def inter_sequence_inter(self, first_seq_idx: int, second_seq_idx: int) -> None:
         """两段之间插值"""
         video_embeddings_pred = torch.zeros([1, 8 * 32, 128]).to(
             self.motion_model.device
@@ -105,7 +123,7 @@ class Text2Performer:
             f'{self.motion_dir}/sequence{first_seq_idx}_{second_seq_idx}',
         )
 
-    def intra_sequence_inter(self, seq_idx):
+    def intra_sequence_inter(self, seq_idx: int | str) -> None:
         """一段内插"""
         video_embeddings_pred = torch.zeros([1, 8 * 32, 128]).to(
             self.motion_model.device
@@ -166,19 +184,36 @@ class Text2Performer:
         )
 
     def generate_appearance(self, input_appearance: str) -> str:
+        # 增加外观数量
         self.num_appearance += 1
+        # 设置运动数量为-1
         self.num_motion = -1
+        # 保存外观数量
         self.save_num_appearance()
+        # 设置外观目录
         self.appearance_dir = f'{self.results_dir}/appearance{self.num_appearance:03d}'
+        # 创建外观目录（如果目录不存在）
         os.makedirs(self.appearance_dir, exist_ok=True)
 
+        # 设置外观文件名
         appearance_file_name = f'{self.appearance_dir}/exampler.png'
+        # 从模型中采样外观
         self.x_identity, self.x_pose = self.app_model.sample_appearance(
             [input_appearance], appearance_file_name
         )
+        # 返回外观文件的绝对路径
         return os.path.abspath(appearance_file_name)
 
     def generate_video(self, interpolate: bool) -> str:
+        """
+        生成视频
+
+        参数：
+        interpolate(bool): 是否插值
+
+        返回：
+        str: 视频文件的绝对路径
+        """
         suf = '_interpolated' if interpolate else ''
 
         images = []
@@ -240,13 +275,18 @@ class Text2Performer:
         return os.path.abspath(h264video_file_name)
 
     def generate_motion(self, input_motion: str) -> str:
+        # 生成运动视频
         self.num_motion += 1
         self.motion_dir = f'{self.appearance_dir}/motion{self.num_motion:03d}'
         os.makedirs(self.motion_dir, exist_ok=True)
 
+        # 将输入的运动字符串按行分割
         input_motion_lines = input_motion.splitlines()
         self.num_input_motion = len(input_motion_lines)
+
+        # 对每一行运动进行处理
         for idx, motion in enumerate(input_motion_lines):
+            # 使用multinomial_text_embeddings方法生成视频嵌入
             video_embeddings_pred = torch.zeros([1, 8 * 32, 128]).to(
                 self.motion_model.device
             )
@@ -259,19 +299,27 @@ class Text2Performer:
                 video_embeddings_pred,
                 f'{self.motion_dir}/sequence{idx}',
             )
+            # 对生成的视频进行细化
             self.motion_model.refine_synthesized(
                 self.x_identity, f'{self.motion_dir}/sequence{idx}'
             )
 
+        # 对相邻的两个序列进行交互
         for i in range(self.num_input_motion - 1):
             self.inter_sequence_inter(i, i + 1)
 
+        # 生成最终的视频
         return self.generate_video(False)
 
     def interpolate(self) -> str:
+        # 遍历输入运动序列
         for i in range(self.num_input_motion - 1):
+            # 在序列中进行内部插值
             self.intra_sequence_inter(i)
+            # 在序列中进行内部插值
             self.intra_sequence_inter(f'{i}_{i + 1}')
+        # 在序列中进行内部插值
         self.intra_sequence_inter(self.num_input_motion - 1)
 
+        # 生成视频
         return self.generate_video(True)
