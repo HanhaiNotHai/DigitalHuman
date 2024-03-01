@@ -1,13 +1,11 @@
 import logging
-import os
 import random
+from collections import defaultdict, deque
 from copy import deepcopy
 
-import numpy as np
 import torch
-from PIL import Image
 from sentence_transformers import SentenceTransformer
-from torchvision.utils import save_image
+from torch import Tensor
 
 from models.archs.dalle_transformer_arch import NonCausalTransformerLanguage
 from models.archs.vqgan_arch import (
@@ -16,7 +14,6 @@ from models.archs.vqgan_arch import (
     VectorQuantizer,
 )
 from models.base_model import BaseModel
-from utils.dist_util import master_only
 
 logger = logging.getLogger('base')
 
@@ -103,6 +100,25 @@ class VideoTransformerModel(BaseModel):
         self.num_inside_timesteps = opt['num_inside_timesteps']
 
         self.get_fixed_language_model()
+
+        self.output_dict: defaultdict[str, list[Tensor]] = defaultdict(list)
+
+    def save_output_frames(
+        self, output_frames: Tensor, save_key: int | str, idx: int | None = None
+    ) -> None:
+        output_frames = ((output_frames + 1) / 2).clamp(0, 1)
+        if idx is None:
+            # TODO 如果要refine_synthesized interpolated记得改
+            if save_key.endswith('_interpolated'):
+                self.output_dict[f'{save_key}'] += [
+                    output_frames[i : i + 1] for i in range(output_frames.shape[0])
+                ]
+            else:
+                self.output_dict[f'{save_key}'] = [
+                    output_frames[i : i + 1] for i in range(output_frames.shape[0])
+                ]
+        else:
+            self.output_dict[f'{save_key}'][idx] = output_frames
 
     def load_pretrained_image_vae(self):
         # load pretrained vqgan for segmentation mask
@@ -272,9 +288,7 @@ class VideoTransformerModel(BaseModel):
         fix_video_len,
         masked_index,
         video_embeddings_pred,
-        save_dir,
-        save_idx=list(range(0, 8)),
-        img_res=[512, 256],
+        save_key,
     ):
         # sample with the first frame given
         self.sampler.eval()
@@ -384,41 +398,13 @@ class VideoTransformerModel(BaseModel):
                 self.identity_embeddings, self.nearest_codebook_embeddings
             )
 
-        self.output_frames = self.output_frames.view(
-            [1, self.fix_video_len, 3, img_res[0], img_res[1]]
-        )
-
-        for idx in range(batch_size):
-            self.get_vis_generated_only_with_index(
-                self.fix_video_len,
-                self.output_frames[idx : idx + 1],
-                save_dir,
-                save_idx,
-            )
+        self.save_output_frames(self.output_frames, save_key)
 
         self.sampler.train()
 
-    def load_raw_image(self, img_path, downsample=True):
-        with open(img_path, 'rb') as f:
-            image = Image.open(f)
-            width, height = image.size
-            image = image.resize(size=(width, height), resample=Image.LANCZOS)
-
-        return image
-
-    def refine_synthesized(
-        self, x_identity, target_dir, fix_video_len=8, img_res=[512, 256]
-    ):
-
-        frames = []
-        for i in range(fix_video_len):
-            frame_path = f'{target_dir}/{i:03d}.png'
-            frame = self.load_raw_image(frame_path, downsample=False)
-            frame = np.array(frame).transpose(2, 0, 1).astype(np.float32)
-            frame = frame / 127.5 - 1
-            frames.append(torch.from_numpy(frame).unsqueeze(0).to(self.device))
-
-        frames = torch.cat(frames, dim=0)
+    # TODO 有必要？fix_video_len=8？
+    def refine_synthesized(self, x_identity, target_key, fix_video_len=8):
+        frames = torch.cat(self.output_dict[target_key], dim=0)
 
         with torch.no_grad():
             frames_embedding = self.get_quantized_frame_embedding(frames)
@@ -427,132 +413,32 @@ class VideoTransformerModel(BaseModel):
 
             self.output_frames = self.decode(identity_embeddings, frames_embedding)
 
-            self.output_frames = self.output_frames.view(
-                [1, fix_video_len, 3, img_res[0], img_res[1]]
-            )
+        self.save_output_frames(self.output_frames, target_key)
 
-        self.get_vis_generated_only(fix_video_len, self.output_frames[0:1], target_dir)
+    def video_stabilization(self, x_identity, num_input_motion, suf):
+        for i in range(num_input_motion - 1):
+            self.output_dict[f'all{suf}'] += self.output_dict[f'{i}{suf}']
+            self.output_dict[f'all{suf}'] += self.output_dict[f'{i}_{i + 1}{suf}']
+        self.output_dict[f'all{suf}'] += self.output_dict[
+            f'{num_input_motion - 1}{suf}'
+        ]
 
-    def video_stabilization(
-        self, x_identity, source_dir, target_dir, fix_video_len=728, img_res=[512, 256]
-    ):
+        frames = torch.cat(self.output_dict[f'all{suf}'][:4], dim=0)
+        frames_embedding = self.get_quantized_frame_embedding(frames)
+        frame_embeddings = deque(
+            [frames_embedding[i : i + 1] for i in range(frames_embedding.shape[0])]
+        )
+        frame_embeddings.appendleft(torch.zeros_like(frame_embeddings[0]))
+        sum_frame_embeddings = sum(frame_embeddings)
 
-        for i in range(fix_video_len):
-            if i < 2:
-                frame_path = f'{source_dir}/{i:03d}.png'
-                frame = self.load_raw_image(frame_path, downsample=False)
-                frame = np.array(frame).transpose(2, 0, 1).astype(np.float32)
-                frame = frame / 127.5 - 1
-                frame_embedding = self.get_quantized_frame_embedding(
-                    torch.from_numpy(frame).unsqueeze(0).to(self.device)
-                )
-
-            elif i > (fix_video_len - 3):
-                frame_path = f'{source_dir}/{i:03d}.png'
-                frame = self.load_raw_image(frame_path, downsample=False)
-                frame = np.array(frame).transpose(2, 0, 1).astype(np.float32)
-                frame = frame / 127.5 - 1
-                frame_embedding = self.get_quantized_frame_embedding(
-                    torch.from_numpy(frame).unsqueeze(0).to(self.device)
-                )
-
-            else:
-                frame_path_1 = f'{source_dir}/{i - 2:03d}.png'
-                frame_1 = self.load_raw_image(frame_path_1, downsample=False)
-                frame_1 = np.array(frame_1).transpose(2, 0, 1).astype(np.float32)
-                frame_1 = frame_1 / 127.5 - 1
-                frame_1 = (
-                    torch.from_numpy(frame_1).unsqueeze(0).to(torch.device('cuda'))
-                )
-
-                frame_embedding_1 = self.get_quantized_frame_embedding(frame_1)
-
-                frame_path_2 = f'{source_dir}/{i - 1:03d}.png'
-                frame_2 = self.load_raw_image(frame_path_2, downsample=False)
-                frame_2 = np.array(frame_2).transpose(2, 0, 1).astype(np.float32)
-                frame_2 = frame_2 / 127.5 - 1
-                frame_2 = (
-                    torch.from_numpy(frame_2).unsqueeze(0).to(torch.device('cuda'))
-                )
-
-                frame_embedding_2 = self.get_quantized_frame_embedding(frame_2)
-
-                frame_path_3 = f'{source_dir}/{i:03d}.png'
-                frame_3 = self.load_raw_image(frame_path_3, downsample=False)
-                frame_3 = np.array(frame_3).transpose(2, 0, 1).astype(np.float32)
-                frame_3 = frame_3 / 127.5 - 1
-                frame_3 = (
-                    torch.from_numpy(frame_3).unsqueeze(0).to(torch.device('cuda'))
-                )
-
-                frame_embedding_3 = self.get_quantized_frame_embedding(frame_3)
-
-                frame_path_4 = f'{source_dir}/{i+1:03d}.png'
-                frame_4 = self.load_raw_image(frame_path_4, downsample=False)
-                frame_4 = np.array(frame_4).transpose(2, 0, 1).astype(np.float32)
-                frame_4 = frame_4 / 127.5 - 1
-                frame_4 = (
-                    torch.from_numpy(frame_4).unsqueeze(0).to(torch.device('cuda'))
-                )
-
-                frame_embedding_4 = self.get_quantized_frame_embedding(frame_4)
-
-                frame_path_5 = f'{source_dir}/{i+2:03d}.png'
-                frame_5 = self.load_raw_image(frame_path_5, downsample=False)
-                frame_5 = np.array(frame_5).transpose(2, 0, 1).astype(np.float32)
-                frame_5 = frame_5 / 127.5 - 1
-                frame_5 = (
-                    torch.from_numpy(frame_5).unsqueeze(0).to(torch.device('cuda'))
-                )
-
-                frame_embedding_5 = self.get_quantized_frame_embedding(frame_5)
-
-                frame_embedding = (
-                    frame_embedding_1
-                    + frame_embedding_2
-                    + frame_embedding_3
-                    + frame_embedding_4
-                    + frame_embedding_5
-                ) / 5.0
-
+        for idx, output_fram in enumerate(self.output_dict[f'all{suf}'][2:-2], 2):
+            sum_frame_embeddings -= frame_embeddings.popleft()
+            frame_embeddings.append(self.get_quantized_frame_embedding(output_fram))
+            sum_frame_embeddings += frame_embeddings[-1]
+            frame_embeddings[2] = sum_frame_embeddings / 5.0
             with torch.no_grad():
-                self.output_frames = self.decode(x_identity, frame_embedding)
-
-                self.output_frames = self.output_frames.view(
-                    [1, 1, 3, img_res[0], img_res[1]]
-                )
-
-            self.get_vis_generated_with_file_name(
-                1, self.output_frames[0:1], f'{target_dir}/{i:03d}.png'
-            )
-
-    @master_only
-    def get_vis_generated_with_file_name(self, video_len, pred_frames, save_path):
-        for frame_idx in range(video_len):
-            pred_img = (pred_frames[:, frame_idx] + 1) / 2
-            pred_img = pred_img.clamp_(0, 1)
-            save_image(pred_img, save_path, nrow=1, padding=4)
-
-    @master_only
-    def get_vis_generated_only_with_index(
-        self, video_len, pred_frames, save_path, save_index
-    ):
-        os.makedirs(save_path, exist_ok=True)
-
-        for idx, frame_idx in enumerate(range(video_len - len(save_index), video_len)):
-            pred_img = (pred_frames[:, frame_idx] + 1) / 2
-            pred_img = pred_img.clamp_(0, 1)
-            save_image(
-                pred_img, f'{save_path}/{save_index[idx]:03d}.png', nrow=1, padding=4
-            )
-
-    @master_only
-    def get_vis_generated_only(self, video_len, pred_frames, save_path):
-        os.makedirs(save_path, exist_ok=True)
-        for frame_idx in range(video_len):
-            pred_img = (pred_frames[:, frame_idx] + 1) / 2
-            pred_img = pred_img.clamp_(0, 1)
-            save_image(pred_img, f'{save_path}/{frame_idx:03d}.png', nrow=1, padding=4)
+                self.output_frame = self.decode(x_identity, frame_embeddings[2])
+            self.save_output_frames(self.output_frame, f'all{suf}', idx)
 
     def load_network(self):
         checkpoint = torch.load(
