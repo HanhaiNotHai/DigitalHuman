@@ -1,11 +1,9 @@
 import os
 import pickle
-import shutil
 
 import cv2
 import numpy as np
 import torch
-from PIL import Image
 
 from models import create_model
 from models.app_transformer_model import AppTransformerModel
@@ -49,42 +47,13 @@ class Text2Performer:
         with open(self.num_appearance_file, 'wb') as f:
             pickle.dump(self.num_appearance, f, pickle.HIGHEST_PROTOCOL)
 
-    def load_raw_image(self, img_path: str, downsample: bool = False) -> Image.Image:
-        """
-        加载原始图像
-
-        参数:
-            img_path (str): 图像路径
-            downsample (bool, optional): 是否进行下采样，默认为False
-
-        返回:
-            Image.Image: 加载的图像
-        """
-        with open(img_path, 'rb') as f:
-            image = Image.open(f)
-            if downsample:
-                image = image.resize(
-                    (image.width // 2, image.height // 2), resample=Image.LANCZOS
-                )
-            else:
-                image = image.copy()
-
-        return image
-
     def inter_sequence_inter(self, first_seq_idx: int, second_seq_idx: int) -> None:
         """两段之间插值"""
         video_embeddings_pred = torch.zeros([1, 8 * 32, 128]).to(
             self.motion_model.device
         )
 
-        first_frame_path = f'{self.motion_dir}/sequence{first_seq_idx}/007.png'
-        first_frame = self.load_raw_image(first_frame_path)
-        first_frame = np.array(first_frame).transpose(2, 0, 1).astype(np.float32)
-        first_frame = first_frame / 127.5 - 1
-        first_frame = (
-            torch.from_numpy(first_frame).unsqueeze(0).to(torch.device('cuda'))
-        )
-
+        first_frame = self.motion_model.output_dict[f'{first_seq_idx}'][-1]
         first_frame_embedding = (
             self.motion_model.get_quantized_frame_embedding(first_frame)
             .view(1, self.motion_model.img_embed_dim // 2, -1)
@@ -94,12 +63,7 @@ class Text2Performer:
 
         video_embeddings_pred[:, :32, :] = first_frame_embedding
 
-        end_frame_path = f'{self.motion_dir}/sequence{second_seq_idx}/000.png'
-        end_frame = self.load_raw_image(end_frame_path)
-        end_frame = np.array(end_frame).transpose(2, 0, 1).astype(np.float32)
-        end_frame = end_frame / 127.5 - 1
-        end_frame = torch.from_numpy(end_frame).unsqueeze(0).to(torch.device('cuda'))
-
+        end_frame = self.motion_model.output_dict[f'{second_seq_idx}'][0]
         end_frame_embedding = (
             self.motion_model.get_quantized_frame_embedding(end_frame)
             .view(1, self.motion_model.img_embed_dim // 2, -1)
@@ -116,11 +80,11 @@ class Text2Performer:
             8,
             list(range(1, 7)),
             video_embeddings_pred,
-            f'{self.motion_dir}/sequence{first_seq_idx}_{second_seq_idx}',
+            f'{first_seq_idx}_{second_seq_idx}',
         )
         self.motion_model.refine_synthesized(
             self.x_identity,
-            f'{self.motion_dir}/sequence{first_seq_idx}_{second_seq_idx}',
+            f'{first_seq_idx}_{second_seq_idx}',
         )
 
     def intra_sequence_inter(self, seq_idx: int | str) -> None:
@@ -130,15 +94,7 @@ class Text2Performer:
         )
 
         for frame_idx in range(7):
-            first_frame_path = (
-                f'{self.motion_dir}/sequence{seq_idx}/{frame_idx:03d}.png'
-            )
-            first_frame = self.load_raw_image(first_frame_path)
-            first_frame = np.array(first_frame).transpose(2, 0, 1).astype(np.float32)
-            first_frame = first_frame / 127.5 - 1
-            first_frame = (
-                torch.from_numpy(first_frame).unsqueeze(0).to(torch.device('cuda'))
-            )
+            first_frame = self.motion_model.output_dict[f'{seq_idx}'][frame_idx]
 
             first_frame_embedding = (
                 self.motion_model.get_quantized_frame_embedding(first_frame)
@@ -149,15 +105,7 @@ class Text2Performer:
 
             video_embeddings_pred[:, :32, :] = first_frame_embedding
 
-            end_frame_path = (
-                f'{self.motion_dir}/sequence{seq_idx}/{frame_idx+1:03d}.png'
-            )
-            end_frame = self.load_raw_image(end_frame_path)
-            end_frame = np.array(end_frame).transpose(2, 0, 1).astype(np.float32)
-            end_frame = end_frame / 127.5 - 1
-            end_frame = (
-                torch.from_numpy(end_frame).unsqueeze(0).to(torch.device('cuda'))
-            )
+            end_frame = self.motion_model.output_dict[f'{seq_idx}'][frame_idx + 1]
 
             end_frame_embedding = (
                 self.motion_model.get_quantized_frame_embedding(end_frame)
@@ -175,13 +123,11 @@ class Text2Performer:
                 8,
                 list(range(1, 7)),
                 video_embeddings_pred,
-                f'{self.motion_dir}/sequence{seq_idx}_interpolated',
-                save_idx=list(range(frame_idx * 8, (frame_idx + 1) * 8)),
+                f'{seq_idx}_interpolated',
             )
 
-        self.motion_model.refine_synthesized(
-            self.x_identity, f'{self.motion_dir}/sequence{seq_idx}_interpolated'
-        )
+        # TODO 爆显存 总共56张 但是原代码只搞8张 这一步有必要？如果要的话记得改save_output_frames
+        # self.motion_model.refine_synthesized(self.x_identity, f'{seq_idx}_interpolated')
 
     def generate_appearance(self, input_appearance: str) -> str:
         # 增加外观数量
@@ -216,52 +162,42 @@ class Text2Performer:
         """
         suf = '_interpolated' if interpolate else ''
 
-        images = []
-        for seq_idx in range(self.num_input_motion - 1):
-            print(f'{self.motion_dir}/sequence{seq_idx}{suf}')
-            for frame_idx in range(56 if interpolate else 8):
-                images.append(
-                    f'{self.motion_dir}/sequence{seq_idx}{suf}/{frame_idx:03d}.png'
-                )
-
-            print(f'{self.motion_dir}/sequence{seq_idx}_{seq_idx + 1}{suf}')
-            for frame_idx in range(56 if interpolate else 8):
-                images.append(
-                    f'{self.motion_dir}/sequence{seq_idx}_{seq_idx + 1}{suf}/{frame_idx:03d}.png'
-                )
-        print(f'{self.motion_dir}/sequence{self.num_input_motion-1}{suf}')
-        for frame_idx in range(56 if interpolate else 8):
-            images.append(
-                f'{self.motion_dir}/sequence{self.num_input_motion-1}{suf}/{frame_idx:03d}.png'
-            )
-        num_images = len(images)
-
-        all_frames_dir = f'{self.motion_dir}/all_frames{suf}'
-        os.makedirs(all_frames_dir, exist_ok=True)
-        for idx, image in enumerate(images):
-            shutil.copy(image, f'{all_frames_dir}/{idx:03d}.png')
-
-        target_dir = f'{self.motion_dir}/all_frames{suf}_stabilized'
-        os.makedirs(target_dir, exist_ok=True)
         self.motion_model.video_stabilization(
-            self.x_identity, all_frames_dir, target_dir, fix_video_len=num_images
+            self.x_identity,
+            self.num_input_motion,
+            suf,
         )
 
         video_file_name = f'{self.motion_dir}/video{suf}.mp4'
 
-        images = []
-        for i in range(num_images):
-            images.append(f'{target_dir}/{i:03d}.png')
-
-        frame = cv2.imread(images[0])
+        frame = np.array(
+            np.around(
+                self.motion_model.output_dict[f'all{suf}'][0]
+                .squeeze(dim=0)[[2, 1, 0]]  # RGB => BGR
+                .permute(1, 2, 0)  # [c, height, width] => [height, width, c]
+                .cpu()
+                * 255  # [0, 1] => [0, 255]
+            ),
+            dtype=np.uint8,
+        )
         height, width, _ = frame.shape
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         video = cv2.VideoWriter(
             video_file_name, fourcc, 48 if interpolate else 8, (width, height)
         )
 
-        for image in images:
-            video.write(cv2.imread(image))
+        for output_frame in self.motion_model.output_dict[f'all{suf}']:
+            video.write(
+                np.array(
+                    np.around(
+                        output_frame.squeeze(dim=0)[[2, 1, 0]]  # RGB => BGR
+                        .permute(1, 2, 0)  # [c, height, width] => [height, width, c]
+                        .cpu()
+                        * 255  # [0, 1] => [0, 255]
+                    ),
+                    dtype=np.uint8,
+                )
+            )
 
         video.release()
 
@@ -297,12 +233,10 @@ class Text2Performer:
                 8,
                 list(range(0, 8)),
                 video_embeddings_pred,
-                f'{self.motion_dir}/sequence{idx}',
+                f'{idx}',
             )
             # 对生成的视频进行细化
-            self.motion_model.refine_synthesized(
-                self.x_identity, f'{self.motion_dir}/sequence{idx}'
-            )
+            self.motion_model.refine_synthesized(self.x_identity, f'{idx}')
 
         # 对相邻的两个序列进行交互
         for i in range(self.num_input_motion - 1):
