@@ -11,7 +11,12 @@ from models.vqgan_decompose_model import VQGANDecomposeModel
 class AppTransformerModel:
     """Texture-Aware Diffusion based Transformer model."""
 
-    def __init__(self, opt, vq_decompose_model: VQGANDecomposeModel):
+    def __init__(
+        self,
+        opt,
+        vq_decompose_model: VQGANDecomposeModel,
+        language_model: SentenceTransformer,
+    ):
         self.opt = opt
         self.device = torch.device('cuda')
 
@@ -44,7 +49,7 @@ class AppTransformerModel:
 
         self.sample_steps = opt['sample_steps']
 
-        self.get_fixed_language_model()
+        self.language_model = language_model
 
     @torch.no_grad()
     def decode(self, quant_list):
@@ -76,9 +81,6 @@ class AppTransformerModel:
         dec = self.decode([quant_identity, quant_frame])
 
         return dec
-
-    def get_fixed_language_model(self):
-        self.language_model = SentenceTransformer('all-MiniLM-L6-v2')
 
     @torch.no_grad()
     def get_text_embedding(self):

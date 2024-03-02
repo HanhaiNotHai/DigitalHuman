@@ -16,7 +16,12 @@ logger = logging.getLogger('base')
 
 class VideoTransformerModel(BaseModel):
 
-    def __init__(self, opt, vq_decompose_model: VQGANDecomposeModel):
+    def __init__(
+        self,
+        opt,
+        vq_decompose_model: VQGANDecomposeModel,
+        language_model: SentenceTransformer,
+    ):
         super().__init__(opt)
 
         # VQVAE for image
@@ -54,7 +59,7 @@ class VideoTransformerModel(BaseModel):
 
         self.num_inside_timesteps = opt['num_inside_timesteps']
 
-        self.get_fixed_language_model()
+        self.language_model = language_model
 
         self.output_dict: defaultdict[str, list[Tensor]] = defaultdict(list)
 
@@ -74,9 +79,6 @@ class VideoTransformerModel(BaseModel):
                 ]
         else:
             self.output_dict[f'{save_key}'][idx] = output_frames
-
-    def get_fixed_language_model(self):
-        self.language_model = SentenceTransformer('all-MiniLM-L6-v2')
 
     @torch.no_grad()
     def get_text_embedding(self):
