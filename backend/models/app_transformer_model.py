@@ -16,9 +16,10 @@ class AppTransformerModel:
         opt,
         vq_decompose_model: VQGANDecomposeModel,
         language_model: SentenceTransformer,
+        device: torch.device,
     ):
         self.opt = opt
-        self.device = torch.device('cuda')
+        self.device = device
 
         # VQVAE for image
         self.img_encoder = vq_decompose_model.encoder

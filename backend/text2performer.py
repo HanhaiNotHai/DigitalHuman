@@ -30,8 +30,10 @@ class Text2Performer:
             self.num_appearance = -1
             self.save_num_appearance()
 
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         vq_decompose_model = VQGANDecomposeModel(
-            parse('./configs/vqgan/vqgan_decompose_high_res.yml')
+            parse('./configs/vqgan/vqgan_decompose_high_res.yml'), device
         )
         vq_decompose_model.load_pretrained_network()
 
@@ -42,6 +44,7 @@ class Text2Performer:
             parse('./configs/sampler/sampler_high_res.yml'),
             vq_decompose_model,
             language_model,
+            device,
         )
         # 加载外观模型的网络
         self.app_model.load_network()
@@ -51,6 +54,7 @@ class Text2Performer:
             parse('./configs/video_transformer/video_trans_high_res.yml'),
             vq_decompose_model,
             language_model,
+            device,
         )
         # 加载运动模型的网络
         self.motion_model.load_network()
