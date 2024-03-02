@@ -93,25 +93,26 @@ class AppTransformerModel:
         )
 
     def sample_fn(self, temp=1.0, sample_steps=None):
-        b, device = self.image.size(0), 'cuda'
+        b = self.image.size(0)
         x_identity_t = (
-            torch.ones((b, np.prod(self.shape)), device=device).long() * self.mask_id
-        )
-        x_pose_t = (
-            torch.ones((b, np.prod(self.shape) // 16), device=device).long()
+            torch.ones((b, np.prod(self.shape)), device=self.device).long()
             * self.mask_id
         )
-        unmasked_identity = torch.zeros_like(x_identity_t, device=device).bool()
-        unmasked_pose = torch.zeros_like(x_pose_t, device=device).bool()
+        x_pose_t = (
+            torch.ones((b, np.prod(self.shape) // 16), device=self.device).long()
+            * self.mask_id
+        )
+        unmasked_identity = torch.zeros_like(x_identity_t, device=self.device).bool()
+        unmasked_pose = torch.zeros_like(x_pose_t, device=self.device).bool()
         sample_steps = list(range(1, sample_steps + 1))
 
         for t in reversed(sample_steps):
             print(f'Sample timestep {t:4d}', end='\r')
-            t = torch.full((b,), t, device=device, dtype=torch.long)
+            t = torch.full((b,), t, device=self.device, dtype=torch.long)
 
             # where to unmask
             changes_identity = torch.rand(
-                x_identity_t.shape, device=device
+                x_identity_t.shape, device=self.device
             ) < 1 / t.float().unsqueeze(-1)
             # don't unmask somewhere already unmasked
             changes_identity = torch.bitwise_xor(
@@ -121,7 +122,7 @@ class AppTransformerModel:
             unmasked_identity = torch.bitwise_or(unmasked_identity, changes_identity)
 
             changes_pose = torch.rand(
-                x_pose_t.shape, device=device
+                x_pose_t.shape, device=self.device
             ) < 1 / t.float().unsqueeze(-1)
             # don't unmask somewhere already unmasked
             changes_pose = torch.bitwise_xor(
