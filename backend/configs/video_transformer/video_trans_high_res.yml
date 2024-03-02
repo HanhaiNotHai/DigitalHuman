@@ -1,9 +1,6 @@
 name: video_trans_high_res
 num_gpu: 1
 
-# pretrained models
-img_ae_path: ./pretrained_models/vqgan_decomposed_high_res.pth
-
 model_type: VideoTransformerModel
 pretrained_sampler: ./pretrained_models/video_trans_high_res.pth
 dist: False
@@ -11,18 +8,6 @@ dist: False
 # network configs
 # image autoencoder
 img_embed_dim: 256
-img_n_embed: 1024
-img_double_z: false
-img_z_channels: 256
-img_resolution: 512
-img_in_channels: 3
-img_out_ch: 3
-img_ch: 128
-img_ch_mult: [1, 1, 2, 2, 4]
-img_other_ch_mult: [4, 4]
-img_num_res_blocks: 2
-img_attn_resolutions: [32]
-img_dropout: 0.0
 
 # sampler configs
 dim: 128

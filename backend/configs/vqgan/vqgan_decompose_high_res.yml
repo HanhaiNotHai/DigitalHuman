@@ -1,0 +1,21 @@
+name: vqgan_decompose_high_res
+num_gpu: 1
+
+model_type: VQGANDecomposeModel
+pretrained_models: pretrained_models/vqgan_decomposed_high_res.pth
+dist: False
+
+# network configs
+embed_dim: 256
+n_embed: 1024
+double_z: false
+z_channels: 256
+resolution: 512
+in_channels: 3
+out_ch: 3
+ch: 128
+ch_mult: [1, 1, 2, 2, 4]
+other_ch_mult: [4, 4]
+num_res_blocks: 2
+attn_resolutions: [32]
+dropout: 0.0

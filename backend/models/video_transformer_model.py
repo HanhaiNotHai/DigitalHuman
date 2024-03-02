@@ -1,96 +1,54 @@
 import logging
 import random
 from collections import defaultdict, deque
-from copy import deepcopy
 
 import torch
 from sentence_transformers import SentenceTransformer
 from torch import Tensor
 
 from models.archs.dalle_transformer_arch import NonCausalTransformerLanguage
-from models.archs.vqgan_arch import (
-    DecoderUpOthersDoubleIdentity,
-    EncoderDecomposeBaseDownOthersDoubleIdentity,
-    VectorQuantizer,
-)
-from models.base_model import BaseModel
+from models.vqgan_decompose_model import VQGANDecomposeModel
 
 logger = logging.getLogger('base')
 
 
-class VideoTransformerModel(BaseModel):
+class VideoTransformerModel:
 
-    def __init__(self, opt):
-        super().__init__(opt)
+    def __init__(
+        self,
+        opt,
+        vq_decompose_model: VQGANDecomposeModel,
+        language_model: SentenceTransformer,
+        device: torch.device,
+    ):
+        self.opt = opt
+        self.device = device
 
         # VQVAE for image
-        self.img_encoder = self.model_to_device(
-            EncoderDecomposeBaseDownOthersDoubleIdentity(
-                ch=opt['img_ch'],
-                num_res_blocks=opt['img_num_res_blocks'],
-                attn_resolutions=opt['img_attn_resolutions'],
-                ch_mult=opt['img_ch_mult'],
-                other_ch_mult=opt['img_other_ch_mult'],
-                in_channels=opt['img_in_channels'],
-                resolution=opt['img_resolution'],
-                z_channels=opt['img_z_channels'],
-                double_z=opt['img_double_z'],
-                dropout=opt['img_dropout'],
-            )
-        )
-        self.img_decoder = self.model_to_device(
-            DecoderUpOthersDoubleIdentity(
-                in_channels=opt['img_in_channels'],
-                resolution=opt['img_resolution'],
-                z_channels=opt['img_z_channels'],
-                ch=opt['img_ch'],
-                out_ch=opt['img_out_ch'],
-                num_res_blocks=opt['img_num_res_blocks'],
-                attn_resolutions=opt['img_attn_resolutions'],
-                ch_mult=opt['img_ch_mult'],
-                other_ch_mult=opt['img_other_ch_mult'],
-                dropout=opt['img_dropout'],
-                resamp_with_conv=True,
-                give_pre_end=False,
-            )
-        )
-        self.img_quantize_identity = self.model_to_device(
-            VectorQuantizer(opt['img_n_embed'], opt['img_embed_dim'], beta=0.25)
-        )
-        self.img_quant_conv_identity = self.model_to_device(
-            torch.nn.Conv2d(opt["img_z_channels"], opt['img_embed_dim'], 1)
-        )
-        self.img_post_quant_conv_identity = self.model_to_device(
-            torch.nn.Conv2d(opt['img_embed_dim'], opt["img_z_channels"], 1)
-        )
+        self.img_encoder = vq_decompose_model.encoder
+        self.img_decoder = vq_decompose_model.decoder
+        self.img_quantize_identity = vq_decompose_model.quantize_identity
+        self.img_quant_conv_identity = vq_decompose_model.quant_conv_identity
+        self.img_post_quant_conv_identity = vq_decompose_model.post_quant_conv_identity
 
-        self.img_quantize_others = self.model_to_device(
-            VectorQuantizer(opt['img_n_embed'], opt['img_embed_dim'] // 2, beta=0.25)
-        )
-        self.img_quant_conv_others = self.model_to_device(
-            torch.nn.Conv2d(opt["img_z_channels"] // 2, opt['img_embed_dim'] // 2, 1)
-        )
-        self.img_post_quant_conv_others = self.model_to_device(
-            torch.nn.Conv2d(opt['img_embed_dim'] // 2, opt["img_z_channels"] // 2, 1)
-        )
-        self.load_pretrained_image_vae()
+        self.img_quantize_others = vq_decompose_model.quantize_others
+        self.img_quant_conv_others = vq_decompose_model.quant_conv_others
+        self.img_post_quant_conv_others = vq_decompose_model.post_quant_conv_others
 
         # define sampler
-        self.sampler = self.model_to_device(
-            NonCausalTransformerLanguage(
-                dim=opt['dim'],
-                depth=opt['depth'],
-                dim_head=opt['dim_head'],
-                heads=opt['heads'],
-                ff_mult=opt['ff_mult'],
-                norm_out=opt['norm_out'],
-                attn_dropout=opt['attn_dropout'],
-                ff_dropout=opt['ff_dropout'],
-                final_proj=opt['final_proj'],
-                normformer=opt['normformer'],
-                rotary_emb=opt['rotary_emb'],
-            )
-        )
+        self.sampler = NonCausalTransformerLanguage(
+            dim=opt['dim'],
+            depth=opt['depth'],
+            dim_head=opt['dim_head'],
+            heads=opt['heads'],
+            ff_mult=opt['ff_mult'],
+            norm_out=opt['norm_out'],
+            attn_dropout=opt['attn_dropout'],
+            ff_dropout=opt['ff_dropout'],
+            final_proj=opt['final_proj'],
+            normformer=opt['normformer'],
+            rotary_emb=opt['rotary_emb'],
+        ).to(self.device)
 
         self.shape = tuple(opt['latent_shape'])
         self.single_len = self.shape[0] * self.shape[1]
@@ -99,7 +57,7 @@ class VideoTransformerModel(BaseModel):
 
         self.num_inside_timesteps = opt['num_inside_timesteps']
 
-        self.get_fixed_language_model()
+        self.language_model = language_model
 
         self.output_dict: defaultdict[str, list[Tensor]] = defaultdict(list)
 
@@ -119,53 +77,6 @@ class VideoTransformerModel(BaseModel):
                 ]
         else:
             self.output_dict[f'{save_key}'][idx] = output_frames
-
-    def load_pretrained_image_vae(self):
-        # load pretrained vqgan for segmentation mask
-        img_ae_checkpoint = torch.load(
-            self.opt['img_ae_path'],
-            map_location=lambda storage, loc: storage.cuda(torch.cuda.current_device()),
-        )
-        self.get_bare_model(self.img_encoder).load_state_dict(
-            img_ae_checkpoint['encoder'], strict=True
-        )
-        self.get_bare_model(self.img_decoder).load_state_dict(
-            img_ae_checkpoint['decoder'], strict=True
-        )
-
-        self.get_bare_model(self.img_quantize_identity).load_state_dict(
-            img_ae_checkpoint['quantize_identity'], strict=True
-        )
-        self.get_bare_model(self.img_quant_conv_identity).load_state_dict(
-            img_ae_checkpoint['quant_conv_identity'], strict=True
-        )
-        self.get_bare_model(self.img_post_quant_conv_identity).load_state_dict(
-            img_ae_checkpoint['post_quant_conv_identity'], strict=True
-        )
-
-        self.get_bare_model(self.img_quantize_others).load_state_dict(
-            img_ae_checkpoint['quantize_others'], strict=True
-        )
-        self.get_bare_model(self.img_quant_conv_others).load_state_dict(
-            img_ae_checkpoint['quant_conv_others'], strict=True
-        )
-        self.get_bare_model(self.img_post_quant_conv_others).load_state_dict(
-            img_ae_checkpoint['post_quant_conv_others'], strict=True
-        )
-
-        self.img_encoder.eval()
-        self.img_decoder.eval()
-
-        self.img_quantize_identity.eval()
-        self.img_quant_conv_identity.eval()
-        self.img_post_quant_conv_identity.eval()
-
-        self.img_quantize_others.eval()
-        self.img_quant_conv_others.eval()
-        self.img_post_quant_conv_others.eval()
-
-    def get_fixed_language_model(self):
-        self.language_model = SentenceTransformer('all-MiniLM-L6-v2')
 
     @torch.no_grad()
     def get_text_embedding(self):
@@ -225,9 +136,11 @@ class VideoTransformerModel(BaseModel):
                     self.text_embedding,
                     mask,
                 )[:, 1 + self.single_len :]
-                temp_nearest_codebook_embeddings = self.get_bare_model(
-                    self.img_quantize_others
-                ).get_nearest_codebook_embeddings(temp_embeddings)
+                temp_nearest_codebook_embeddings = (
+                    self.img_quantize_others.get_nearest_codebook_embeddings(
+                        temp_embeddings
+                    )
+                )
                 video_embeddings_pred[unmasked_full_temp, :] = (
                     temp_nearest_codebook_embeddings[unmasked_full_temp, :]
                 )
@@ -268,9 +181,11 @@ class VideoTransformerModel(BaseModel):
                     self.text_embedding,
                     mask,
                 )[:, 1 + self.single_len :]
-                temp_nearest_codebook_embeddings = self.get_bare_model(
-                    self.img_quantize_others
-                ).get_nearest_codebook_embeddings(temp_embeddings)
+                temp_nearest_codebook_embeddings = (
+                    self.img_quantize_others.get_nearest_codebook_embeddings(
+                        temp_embeddings
+                    )
+                )
                 video_embeddings_pred[unmasked_full_temp, :] = (
                     temp_nearest_codebook_embeddings[unmasked_full_temp, :]
                 )
@@ -291,8 +206,6 @@ class VideoTransformerModel(BaseModel):
         save_key,
     ):
         # sample with the first frame given
-        self.sampler.eval()
-
         self.text = text
 
         self.get_text_embedding()
@@ -368,17 +281,20 @@ class VideoTransformerModel(BaseModel):
                     self.text_embedding,
                     mask,
                 )[:, 1 + self.single_len :]
-                temp_nearest_codebook_embeddings = self.get_bare_model(
-                    self.img_quantize_others
-                ).get_nearest_codebook_embeddings(temp_embeddings)
+                temp_nearest_codebook_embeddings = (
+                    self.img_quantize_others.get_nearest_codebook_embeddings(
+                        temp_embeddings
+                    )
+                )
                 video_embeddings_pred[unmask, :] = temp_nearest_codebook_embeddings[
                     unmask, :
                 ]
 
         with torch.no_grad():
             self.nearest_codebook_embeddings = (
-                self.get_bare_model(self.img_quantize_others)
-                .get_nearest_codebook_embeddings(video_embeddings_pred)
+                self.img_quantize_others.get_nearest_codebook_embeddings(
+                    video_embeddings_pred
+                )
                 .view(
                     (
                         batch_size * self.fix_video_len,
@@ -399,8 +315,6 @@ class VideoTransformerModel(BaseModel):
             )
 
         self.save_output_frames(self.output_frames, save_key)
-
-        self.sampler.train()
 
     # TODO 有必要？fix_video_len=8？
     def refine_synthesized(self, x_identity, target_key, fix_video_len=8):
@@ -445,11 +359,5 @@ class VideoTransformerModel(BaseModel):
             self.opt['pretrained_sampler'],
             map_location=lambda storage, loc: storage.cuda(torch.cuda.current_device()),
         )
-        # remove unnecessary 'module.'
-        for k, v in deepcopy(checkpoint).items():
-            if k.startswith('module.'):
-                checkpoint[k[7:]] = v
-                checkpoint.pop(k)
-
-        self.get_bare_model(self.sampler).load_state_dict(checkpoint, strict=True)
-        self.get_bare_model(self.sampler).eval()
+        self.sampler.load_state_dict(checkpoint, strict=True)
+        self.sampler.eval()
