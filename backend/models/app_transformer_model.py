@@ -93,8 +93,6 @@ class AppTransformerModel:
         )
 
     def sample_fn(self, temp=1.0, sample_steps=None):
-        self._denoise_fn.eval()
-
         b, device = self.image.size(0), 'cuda'
         x_identity_t = (
             torch.ones((b, np.prod(self.shape)), device=device).long() * self.mask_id
@@ -156,13 +154,9 @@ class AppTransformerModel:
             x_identity_t[changes_identity] = x_identity_0_hat[changes_identity]
             x_pose_t[changes_pose] = x_pose_0_hat[changes_pose]
 
-        self._denoise_fn.train()
-
         return x_identity_t, x_pose_t
 
     def sample_appearance(self, text, save_path, shape=[256, 128]):
-        self._denoise_fn.eval()
-
         self.text = text
         self.image = torch.zeros([1, 3, shape[0], shape[1]]).to(self.device)
         self.get_text_embedding()
@@ -196,8 +190,6 @@ class AppTransformerModel:
             .view(x_pose_t.size(0), self.opt["img_z_channels"] // 2, -1)
             .permute(0, 2, 1)
         )
-
-        self._denoise_fn.train()
 
         return quant_identity, quant_frame
 

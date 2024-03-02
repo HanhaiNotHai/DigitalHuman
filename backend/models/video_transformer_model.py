@@ -206,8 +206,6 @@ class VideoTransformerModel:
         save_key,
     ):
         # sample with the first frame given
-        self.sampler.eval()
-
         self.text = text
 
         self.get_text_embedding()
@@ -317,8 +315,6 @@ class VideoTransformerModel:
             )
 
         self.save_output_frames(self.output_frames, save_key)
-
-        self.sampler.train()
 
     # TODO 有必要？fix_video_len=8？
     def refine_synthesized(self, x_identity, target_key, fix_video_len=8):
