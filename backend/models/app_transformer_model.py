@@ -61,7 +61,7 @@ class AppTransformerModel:
 
     @torch.no_grad()
     def decode_image_indices(self, quant_identity, quant_frame):
-        quant_identity = self.quantize_identity.get_codebook_entry(
+        self.quant_identity = self.quantize_identity.get_codebook_entry(
             quant_identity,
             (
                 quant_identity.size(0),
@@ -70,7 +70,7 @@ class AppTransformerModel:
                 self.opt["img_z_channels"],
             ),
         )
-        quant_frame = self.quantize_others.get_codebook_entry(
+        self.quant_frame = self.quantize_others.get_codebook_entry(
             quant_frame,
             (
                 quant_frame.size(0),
@@ -79,7 +79,7 @@ class AppTransformerModel:
                 self.opt["img_z_channels"] // 2,
             ),
         )
-        dec = self.decode([quant_identity, quant_frame])
+        dec = self.decode([self.quant_identity, self.quant_frame])
 
         return dec
 
@@ -169,30 +169,11 @@ class AppTransformerModel:
 
         self.get_vis_generated_only(x_identity_t, x_pose_t, save_path)
 
-        quant_identity = self.quantize_identity.get_codebook_entry(
-            x_identity_t,
-            (
-                x_identity_t.size(0),
-                self.shape[0],
-                self.shape[1],
-                self.opt["img_z_channels"],
-            ),
-        )
-        quant_frame = (
-            self.quantize_others.get_codebook_entry(
-                x_pose_t,
-                (
-                    x_pose_t.size(0),
-                    self.shape[0] // 4,
-                    self.shape[1] // 4,
-                    self.opt["img_z_channels"] // 2,
-                ),
-            )
-            .view(x_pose_t.size(0), self.opt["img_z_channels"] // 2, -1)
-            .permute(0, 2, 1)
-        )
+        self.quant_frame = self.quant_frame.view(
+            x_pose_t.size(0), self.opt["img_z_channels"] // 2, -1
+        ).permute(0, 2, 1)
 
-        return quant_identity, quant_frame
+        return self.quant_identity, self.quant_frame
 
     def get_vis_generated_only(self, quant_identity, quant_frame, save_path):
         # pred image
