@@ -5,9 +5,9 @@ import cv2
 import numpy as np
 import torch
 
-from models import create_model
 from models.app_transformer_model import AppTransformerModel
 from models.video_transformer_model import VideoTransformerModel
+from models.vqgan_decompose_model import VQGANDecomposeModel
 from utils.options import parse
 
 
@@ -29,16 +29,23 @@ class Text2Performer:
             self.num_appearance = -1
             self.save_num_appearance()
 
+        vq_decompose_model = VQGANDecomposeModel(
+            parse('./configs/vqgan/vqgan_decompose_high_res.yml')
+        )
+        vq_decompose_model.load_pretrained_network()
+
         # 创建外观模型
-        self.app_model: AppTransformerModel = create_model(
-            parse('./configs/sampler/sampler_high_res.yml')
+        self.app_model = AppTransformerModel(
+            parse('./configs/sampler/sampler_high_res.yml'),
+            vq_decompose_model,
         )
         # 加载外观模型的网络
         self.app_model.load_network()
 
         # 创建运动模型
-        self.motion_model: VideoTransformerModel = create_model(
-            parse('./configs/video_transformer/video_trans_high_res.yml')
+        self.motion_model = VideoTransformerModel(
+            parse('./configs/video_transformer/video_trans_high_res.yml'),
+            vq_decompose_model,
         )
         # 加载运动模型的网络
         self.motion_model.load_network()

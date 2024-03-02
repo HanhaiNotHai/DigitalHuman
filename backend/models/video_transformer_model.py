@@ -8,72 +8,27 @@ from sentence_transformers import SentenceTransformer
 from torch import Tensor
 
 from models.archs.dalle_transformer_arch import NonCausalTransformerLanguage
-from models.archs.vqgan_arch import (
-    DecoderUpOthersDoubleIdentity,
-    EncoderDecomposeBaseDownOthersDoubleIdentity,
-    VectorQuantizer,
-)
 from models.base_model import BaseModel
+from models.vqgan_decompose_model import VQGANDecomposeModel
 
 logger = logging.getLogger('base')
 
 
 class VideoTransformerModel(BaseModel):
 
-    def __init__(self, opt):
+    def __init__(self, opt, vq_decompose_model: VQGANDecomposeModel):
         super().__init__(opt)
 
         # VQVAE for image
-        self.img_encoder = self.model_to_device(
-            EncoderDecomposeBaseDownOthersDoubleIdentity(
-                ch=opt['img_ch'],
-                num_res_blocks=opt['img_num_res_blocks'],
-                attn_resolutions=opt['img_attn_resolutions'],
-                ch_mult=opt['img_ch_mult'],
-                other_ch_mult=opt['img_other_ch_mult'],
-                in_channels=opt['img_in_channels'],
-                resolution=opt['img_resolution'],
-                z_channels=opt['img_z_channels'],
-                double_z=opt['img_double_z'],
-                dropout=opt['img_dropout'],
-            )
-        )
-        self.img_decoder = self.model_to_device(
-            DecoderUpOthersDoubleIdentity(
-                in_channels=opt['img_in_channels'],
-                resolution=opt['img_resolution'],
-                z_channels=opt['img_z_channels'],
-                ch=opt['img_ch'],
-                out_ch=opt['img_out_ch'],
-                num_res_blocks=opt['img_num_res_blocks'],
-                attn_resolutions=opt['img_attn_resolutions'],
-                ch_mult=opt['img_ch_mult'],
-                other_ch_mult=opt['img_other_ch_mult'],
-                dropout=opt['img_dropout'],
-                resamp_with_conv=True,
-                give_pre_end=False,
-            )
-        )
-        self.img_quantize_identity = self.model_to_device(
-            VectorQuantizer(opt['img_n_embed'], opt['img_embed_dim'], beta=0.25)
-        )
-        self.img_quant_conv_identity = self.model_to_device(
-            torch.nn.Conv2d(opt["img_z_channels"], opt['img_embed_dim'], 1)
-        )
-        self.img_post_quant_conv_identity = self.model_to_device(
-            torch.nn.Conv2d(opt['img_embed_dim'], opt["img_z_channels"], 1)
-        )
+        self.img_encoder = vq_decompose_model.encoder
+        self.img_decoder = vq_decompose_model.decoder
+        self.img_quantize_identity = vq_decompose_model.quantize_identity
+        self.img_quant_conv_identity = vq_decompose_model.quant_conv_identity
+        self.img_post_quant_conv_identity = vq_decompose_model.post_quant_conv_identity
 
-        self.img_quantize_others = self.model_to_device(
-            VectorQuantizer(opt['img_n_embed'], opt['img_embed_dim'] // 2, beta=0.25)
-        )
-        self.img_quant_conv_others = self.model_to_device(
-            torch.nn.Conv2d(opt["img_z_channels"] // 2, opt['img_embed_dim'] // 2, 1)
-        )
-        self.img_post_quant_conv_others = self.model_to_device(
-            torch.nn.Conv2d(opt['img_embed_dim'] // 2, opt["img_z_channels"] // 2, 1)
-        )
-        self.load_pretrained_image_vae()
+        self.img_quantize_others = vq_decompose_model.quantize_others
+        self.img_quant_conv_others = vq_decompose_model.quant_conv_others
+        self.img_post_quant_conv_others = vq_decompose_model.post_quant_conv_others
 
         # define sampler
         self.sampler = self.model_to_device(
@@ -119,50 +74,6 @@ class VideoTransformerModel(BaseModel):
                 ]
         else:
             self.output_dict[f'{save_key}'][idx] = output_frames
-
-    def load_pretrained_image_vae(self):
-        # load pretrained vqgan for segmentation mask
-        img_ae_checkpoint = torch.load(
-            self.opt['img_ae_path'],
-            map_location=lambda storage, loc: storage.cuda(torch.cuda.current_device()),
-        )
-        self.get_bare_model(self.img_encoder).load_state_dict(
-            img_ae_checkpoint['encoder'], strict=True
-        )
-        self.get_bare_model(self.img_decoder).load_state_dict(
-            img_ae_checkpoint['decoder'], strict=True
-        )
-
-        self.get_bare_model(self.img_quantize_identity).load_state_dict(
-            img_ae_checkpoint['quantize_identity'], strict=True
-        )
-        self.get_bare_model(self.img_quant_conv_identity).load_state_dict(
-            img_ae_checkpoint['quant_conv_identity'], strict=True
-        )
-        self.get_bare_model(self.img_post_quant_conv_identity).load_state_dict(
-            img_ae_checkpoint['post_quant_conv_identity'], strict=True
-        )
-
-        self.get_bare_model(self.img_quantize_others).load_state_dict(
-            img_ae_checkpoint['quantize_others'], strict=True
-        )
-        self.get_bare_model(self.img_quant_conv_others).load_state_dict(
-            img_ae_checkpoint['quant_conv_others'], strict=True
-        )
-        self.get_bare_model(self.img_post_quant_conv_others).load_state_dict(
-            img_ae_checkpoint['post_quant_conv_others'], strict=True
-        )
-
-        self.img_encoder.eval()
-        self.img_decoder.eval()
-
-        self.img_quantize_identity.eval()
-        self.img_quant_conv_identity.eval()
-        self.img_post_quant_conv_identity.eval()
-
-        self.img_quantize_others.eval()
-        self.img_quant_conv_others.eval()
-        self.img_post_quant_conv_others.eval()
 
     def get_fixed_language_model(self):
         self.language_model = SentenceTransformer('all-MiniLM-L6-v2')

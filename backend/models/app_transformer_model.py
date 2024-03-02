@@ -5,67 +5,26 @@ from sentence_transformers import SentenceTransformer
 from torchvision.utils import save_image
 
 from models.archs.transformer_arch import TransformerLanguage
-from models.archs.vqgan_arch import (
-    DecoderUpOthersDoubleIdentity,
-    EncoderDecomposeBaseDownOthersDoubleIdentity,
-    VectorQuantizer,
-)
+from models.vqgan_decompose_model import VQGANDecomposeModel
 
 
 class AppTransformerModel:
     """Texture-Aware Diffusion based Transformer model."""
 
-    def __init__(self, opt):
+    def __init__(self, opt, vq_decompose_model: VQGANDecomposeModel):
         self.opt = opt
         self.device = torch.device('cuda')
 
         # VQVAE for image
-        self.img_encoder = EncoderDecomposeBaseDownOthersDoubleIdentity(
-            ch=opt['img_ch'],
-            num_res_blocks=opt['img_num_res_blocks'],
-            attn_resolutions=opt['img_attn_resolutions'],
-            ch_mult=opt['img_ch_mult'],
-            other_ch_mult=opt['img_other_ch_mult'],
-            in_channels=opt['img_in_channels'],
-            resolution=opt['img_resolution'],
-            z_channels=opt['img_z_channels'],
-            double_z=opt['img_double_z'],
-            dropout=opt['img_dropout'],
-        ).to(self.device)
-        self.img_decoder = DecoderUpOthersDoubleIdentity(
-            in_channels=opt['img_in_channels'],
-            resolution=opt['img_resolution'],
-            z_channels=opt['img_z_channels'],
-            ch=opt['img_ch'],
-            out_ch=opt['img_out_ch'],
-            num_res_blocks=opt['img_num_res_blocks'],
-            attn_resolutions=opt['img_attn_resolutions'],
-            ch_mult=opt['img_ch_mult'],
-            other_ch_mult=opt['img_other_ch_mult'],
-            dropout=opt['img_dropout'],
-            resamp_with_conv=True,
-            give_pre_end=False,
-        ).to(self.device)
-        self.quantize_identity = VectorQuantizer(
-            opt['img_n_embed'], opt['img_embed_dim'], beta=0.25
-        ).to(self.device)
-        self.quant_conv_identity = torch.nn.Conv2d(
-            opt["img_z_channels"], opt['img_embed_dim'], 1
-        ).to(self.device)
-        self.post_quant_conv_identity = torch.nn.Conv2d(
-            opt['img_embed_dim'], opt["img_z_channels"], 1
-        ).to(self.device)
+        self.img_encoder = vq_decompose_model.encoder
+        self.img_decoder = vq_decompose_model.decoder
+        self.quantize_identity = vq_decompose_model.quantize_identity
+        self.quant_conv_identity = vq_decompose_model.quant_conv_identity
+        self.post_quant_conv_identity = vq_decompose_model.post_quant_conv_identity
 
-        self.quantize_others = VectorQuantizer(
-            opt['img_n_embed'], opt['img_embed_dim'] // 2, beta=0.25
-        ).to(self.device)
-        self.quant_conv_others = torch.nn.Conv2d(
-            opt["img_z_channels"] // 2, opt['img_embed_dim'] // 2, 1
-        ).to(self.device)
-        self.post_quant_conv_others = torch.nn.Conv2d(
-            opt['img_embed_dim'] // 2, opt["img_z_channels"] // 2, 1
-        ).to(self.device)
-        self.load_pretrained_image_vae()
+        self.quantize_others = vq_decompose_model.quantize_others
+        self.quant_conv_others = vq_decompose_model.quant_conv_others
+        self.post_quant_conv_others = vq_decompose_model.post_quant_conv_others
 
         # define sampler
         self._denoise_fn = TransformerLanguage(
@@ -86,38 +45,6 @@ class AppTransformerModel:
         self.sample_steps = opt['sample_steps']
 
         self.get_fixed_language_model()
-
-    def load_pretrained_image_vae(self):
-        # load pretrained vqgan for segmentation mask
-        img_ae_checkpoint = torch.load(self.opt['img_ae_path'])
-        self.img_encoder.load_state_dict(img_ae_checkpoint['encoder'], strict=True)
-        self.img_decoder.load_state_dict(img_ae_checkpoint['decoder'], strict=True)
-        self.quantize_identity.load_state_dict(
-            img_ae_checkpoint['quantize_identity'], strict=True
-        )
-        self.quant_conv_identity.load_state_dict(
-            img_ae_checkpoint['quant_conv_identity'], strict=True
-        )
-        self.post_quant_conv_identity.load_state_dict(
-            img_ae_checkpoint['post_quant_conv_identity'], strict=True
-        )
-        self.quantize_others.load_state_dict(
-            img_ae_checkpoint['quantize_others'], strict=True
-        )
-        self.quant_conv_others.load_state_dict(
-            img_ae_checkpoint['quant_conv_others'], strict=True
-        )
-        self.post_quant_conv_others.load_state_dict(
-            img_ae_checkpoint['post_quant_conv_others'], strict=True
-        )
-        self.img_encoder.eval()
-        self.img_decoder.eval()
-        self.quantize_identity.eval()
-        self.quant_conv_identity.eval()
-        self.post_quant_conv_identity.eval()
-        self.quantize_others.eval()
-        self.quant_conv_others.eval()
-        self.post_quant_conv_others.eval()
 
     @torch.no_grad()
     def decode(self, quant_list):
