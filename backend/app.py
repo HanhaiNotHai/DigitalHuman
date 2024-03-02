@@ -3,7 +3,6 @@ import os
 import flask
 from flask import Flask, Response, request
 from flask_cors import CORS
-from werkzeug.utils import secure_filename
 
 from text2performer import Text2Performer
 
@@ -26,13 +25,10 @@ def hello_world() -> str:
 
 @app.route('/favicon.ico')
 def favicon() -> Response:
-    # 获取 favicon 文件的路径
-    file_path = os.path.join(app.root_path, 'static', 'favicon.ico')
-    # 使用 secure_filename 确保文件名是安全的
-    secure_file_path = secure_filename(file_path)
-    # 发送 favicon 文件给客户端
     return flask.send_from_directory(
-        app.root_path, secure_file_path, mimetype='image/vnd.microsoft.icon'
+        os.path.join(app.root_path, 'static'),
+        'favicon.ico',
+        mimetype='image/vnd.microsoft.icon',
     )
 
 
