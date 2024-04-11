@@ -6,8 +6,8 @@ import torch
 from sentence_transformers import SentenceTransformer
 from torch import Tensor
 
-from models.archs.dalle_transformer_arch import NonCausalTransformerLanguage
-from models.vqgan_decompose_model import VQGANDecomposeModel
+from .archs.dalle_transformer_arch import NonCausalTransformerLanguage
+from .vqgan_decompose_model import VQGANDecomposeModel
 
 logger = logging.getLogger('base')
 
@@ -58,6 +58,13 @@ class VideoTransformerModel:
         self.num_inside_timesteps = opt['num_inside_timesteps']
 
         self.language_model = language_model
+
+        checkpoint = torch.load(
+            opt['pretrained_sampler'],
+            map_location=lambda storage, loc: storage.cuda(torch.cuda.current_device()),
+        )
+        self.sampler.load_state_dict(checkpoint, strict=True)
+        self.sampler.eval()
 
         self.output_dict: defaultdict[str, list[Tensor]] = defaultdict(list)
 
@@ -353,11 +360,3 @@ class VideoTransformerModel:
             with torch.no_grad():
                 self.output_frame = self.decode(x_identity, frame_embeddings[2])
             self.save_output_frames(self.output_frame, f'all{suf}', idx)
-
-    def load_network(self):
-        checkpoint = torch.load(
-            self.opt['pretrained_sampler'],
-            map_location=lambda storage, loc: storage.cuda(torch.cuda.current_device()),
-        )
-        self.sampler.load_state_dict(checkpoint, strict=True)
-        self.sampler.eval()

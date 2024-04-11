@@ -2,7 +2,7 @@ name: video_trans_high_res
 num_gpu: 1
 
 model_type: VideoTransformerModel
-pretrained_sampler: ./pretrained_models/video_trans_high_res.pth
+pretrained_sampler: ./text2performer/pretrained_models/video_trans_high_res.pth
 dist: False
 
 # network configs

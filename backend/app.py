@@ -4,12 +4,10 @@ import flask
 from flask import Flask, Response, request
 from flask_cors import CORS
 
-from text2performer import Text2Performer
+from text2performer import text2performer
 
 app = Flask(__name__)
 CORS(app)
-
-text2performer = Text2Performer()
 
 
 @app.route("/")

@@ -4,8 +4,8 @@ import torch.distributions as dists
 from sentence_transformers import SentenceTransformer
 from torchvision.utils import save_image
 
-from models.archs.transformer_arch import TransformerLanguage
-from models.vqgan_decompose_model import VQGANDecomposeModel
+from .archs.transformer_arch import TransformerLanguage
+from .vqgan_decompose_model import VQGANDecomposeModel
 
 
 class AppTransformerModel:
@@ -51,6 +51,11 @@ class AppTransformerModel:
         self.sample_steps = opt['sample_steps']
 
         self.language_model = language_model
+
+        self._denoise_fn.load_state_dict(
+            torch.load(opt['pretrained_sampler']), strict=True
+        )
+        self._denoise_fn.eval()
 
     @torch.no_grad()
     def decode(self, quant_list):
@@ -181,8 +186,3 @@ class AppTransformerModel:
         img_cat = (pred_img.detach() + 1) / 2
         img_cat = img_cat.clamp_(0, 1)
         save_image(img_cat, save_path, nrow=1, padding=4)
-
-    def load_network(self):
-        checkpoint = torch.load(self.opt['pretrained_sampler'])
-        self._denoise_fn.load_state_dict(checkpoint, strict=True)
-        self._denoise_fn.eval()

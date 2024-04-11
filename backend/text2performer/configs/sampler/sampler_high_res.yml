@@ -1,7 +1,7 @@
 name: sampler_high_res
 
 model_type: AppTransformerModel
-pretrained_sampler: ./pretrained_models/sampler_high_res.pth
+pretrained_sampler: ./text2performer/pretrained_models/sampler_high_res.pth
 
 # network configs
 # image autoencoder

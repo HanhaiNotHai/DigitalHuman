@@ -5,8 +5,8 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch import einsum, nn
 
-from models.archs.einops_exts import repeat_many
-from models.archs.rotary_embedding_torch import RotaryEmbedding
+from .einops_exts import repeat_many
+from .rotary_embedding_torch import RotaryEmbedding
 
 
 # helper functions

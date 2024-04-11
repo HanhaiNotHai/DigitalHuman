@@ -2,7 +2,7 @@ name: vqgan_decompose_high_res
 num_gpu: 1
 
 model_type: VQGANDecomposeModel
-pretrained_models: pretrained_models/vqgan_decomposed_high_res.pth
+pretrained_models: ./text2performer/pretrained_models/vqgan_decomposed_high_res.pth
 dist: False
 
 # network configs

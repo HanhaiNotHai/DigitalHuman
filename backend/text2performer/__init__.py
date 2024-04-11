@@ -6,16 +6,16 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
-from models.app_transformer_model import AppTransformerModel
-from models.video_transformer_model import VideoTransformerModel
-from models.vqgan_decompose_model import VQGANDecomposeModel
-from utils.options import parse
+from .models.app_transformer_model import AppTransformerModel
+from .models.video_transformer_model import VideoTransformerModel
+from .models.vqgan_decompose_model import VQGANDecomposeModel
+from .utils.options import parse
 
 
 class Text2Performer:
     def __init__(self) -> None:
         # 初始化结果目录
-        self.results_dir = './results'
+        self.results_dir = './text2performer/results'
         # 如果结果目录不存在，则创建
         os.makedirs(self.results_dir, exist_ok=True)
 
@@ -33,31 +33,28 @@ class Text2Performer:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         vq_decompose_model = VQGANDecomposeModel(
-            parse('./configs/vqgan/vqgan_decompose_high_res.yml'), device
+            parse('./text2performer/configs/vqgan/vqgan_decompose_high_res.yml'), device
         )
-        vq_decompose_model.load_pretrained_network()
 
         language_model = SentenceTransformer('all-MiniLM-L6-v2')
 
         # 创建外观模型
         self.app_model = AppTransformerModel(
-            parse('./configs/sampler/sampler_high_res.yml'),
+            parse('./text2performer/configs/sampler/sampler_high_res.yml'),
             vq_decompose_model,
             language_model,
             device,
         )
-        # 加载外观模型的网络
-        self.app_model.load_network()
 
         # 创建运动模型
         self.motion_model = VideoTransformerModel(
-            parse('./configs/video_transformer/video_trans_high_res.yml'),
+            parse(
+                './text2performer/configs/video_transformer/video_trans_high_res.yml'
+            ),
             vq_decompose_model,
             language_model,
             device,
         )
-        # 加载运动模型的网络
-        self.motion_model.load_network()
 
     def save_num_appearance(self) -> None:
         with open(self.num_appearance_file, 'wb') as f:
@@ -273,3 +270,6 @@ class Text2Performer:
 
         # 生成视频
         return self.generate_video(True)
+
+
+text2performer = Text2Performer()
