@@ -1,5 +1,6 @@
 import os
 import pickle
+from collections import defaultdict
 
 import cv2
 import numpy as np
@@ -231,6 +232,7 @@ class Text2Performer:
     @torch.no_grad()
     def generate_motion(self, input_motion: str) -> str:
         self.motion_model.to('cuda')
+        self.motion_model.output_dict = defaultdict(list)
 
         # 生成运动视频
         self.num_motion += 1
