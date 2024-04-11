@@ -25,15 +25,7 @@ class VideoTransformerModel:
         self.device = device
 
         # VQVAE for image
-        self.img_encoder = vq_decompose_model.encoder
-        self.img_decoder = vq_decompose_model.decoder
-        self.img_quantize_identity = vq_decompose_model.quantize_identity
-        self.img_quant_conv_identity = vq_decompose_model.quant_conv_identity
-        self.img_post_quant_conv_identity = vq_decompose_model.post_quant_conv_identity
-
-        self.img_quantize_others = vq_decompose_model.quantize_others
-        self.img_quant_conv_others = vq_decompose_model.quant_conv_others
-        self.img_post_quant_conv_others = vq_decompose_model.post_quant_conv_others
+        self.vq_decompose_model = vq_decompose_model
 
         # define sampler
         self.sampler = NonCausalTransformerLanguage(
@@ -96,16 +88,20 @@ class VideoTransformerModel:
 
     @torch.no_grad()
     def get_quantized_frame_embedding(self, image):
-        _, frame_embeddings = self.img_encoder(image)
-        frame_embeddings = self.img_quant_conv_others(frame_embeddings)
-        frame_embeddings, _, _ = self.img_quantize_others(frame_embeddings)
+        _, frame_embeddings = self.vq_decompose_model.encoder(image)
+        frame_embeddings = self.vq_decompose_model.quant_conv_others(frame_embeddings)
+        frame_embeddings, _, _ = self.vq_decompose_model.quantize_others(
+            frame_embeddings
+        )
 
         return frame_embeddings
 
     def decode(self, identity_embeddings, frame_embeddings):
-        quant_identity = self.img_post_quant_conv_identity(identity_embeddings)
-        quant_frame = self.img_post_quant_conv_others(frame_embeddings)
-        dec = self.img_decoder(quant_identity, quant_frame)
+        quant_identity = self.vq_decompose_model.post_quant_conv_identity(
+            identity_embeddings
+        )
+        quant_frame = self.vq_decompose_model.post_quant_conv_others(frame_embeddings)
+        dec = self.vq_decompose_model.decoder(quant_identity, quant_frame)
         return dec
 
     def sample_first_last(self, video_embeddings_pred, mask):
@@ -143,10 +139,8 @@ class VideoTransformerModel:
                     self.text_embedding,
                     mask,
                 )[:, 1 + self.single_len :]
-                temp_nearest_codebook_embeddings = (
-                    self.img_quantize_others.get_nearest_codebook_embeddings(
-                        temp_embeddings
-                    )
+                temp_nearest_codebook_embeddings = self.vq_decompose_model.quantize_others.get_nearest_codebook_embeddings(
+                    temp_embeddings
                 )
                 video_embeddings_pred[unmasked_full_temp, :] = (
                     temp_nearest_codebook_embeddings[unmasked_full_temp, :]
@@ -188,10 +182,8 @@ class VideoTransformerModel:
                     self.text_embedding,
                     mask,
                 )[:, 1 + self.single_len :]
-                temp_nearest_codebook_embeddings = (
-                    self.img_quantize_others.get_nearest_codebook_embeddings(
-                        temp_embeddings
-                    )
+                temp_nearest_codebook_embeddings = self.vq_decompose_model.quantize_others.get_nearest_codebook_embeddings(
+                    temp_embeddings
                 )
                 video_embeddings_pred[unmasked_full_temp, :] = (
                     temp_nearest_codebook_embeddings[unmasked_full_temp, :]
@@ -288,10 +280,8 @@ class VideoTransformerModel:
                     self.text_embedding,
                     mask,
                 )[:, 1 + self.single_len :]
-                temp_nearest_codebook_embeddings = (
-                    self.img_quantize_others.get_nearest_codebook_embeddings(
-                        temp_embeddings
-                    )
+                temp_nearest_codebook_embeddings = self.vq_decompose_model.quantize_others.get_nearest_codebook_embeddings(
+                    temp_embeddings
                 )
                 video_embeddings_pred[unmask, :] = temp_nearest_codebook_embeddings[
                     unmask, :
@@ -299,7 +289,7 @@ class VideoTransformerModel:
 
         with torch.no_grad():
             self.nearest_codebook_embeddings = (
-                self.img_quantize_others.get_nearest_codebook_embeddings(
+                self.vq_decompose_model.quantize_others.get_nearest_codebook_embeddings(
                     video_embeddings_pred
                 )
                 .view(

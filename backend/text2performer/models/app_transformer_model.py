@@ -22,15 +22,7 @@ class AppTransformerModel:
         self.device = device
 
         # VQVAE for image
-        self.img_encoder = vq_decompose_model.encoder
-        self.img_decoder = vq_decompose_model.decoder
-        self.quantize_identity = vq_decompose_model.quantize_identity
-        self.quant_conv_identity = vq_decompose_model.quant_conv_identity
-        self.post_quant_conv_identity = vq_decompose_model.post_quant_conv_identity
-
-        self.quantize_others = vq_decompose_model.quantize_others
-        self.quant_conv_others = vq_decompose_model.quant_conv_others
-        self.post_quant_conv_others = vq_decompose_model.post_quant_conv_others
+        self.vq_decompose_model = vq_decompose_model
 
         # define sampler
         self._denoise_fn = TransformerLanguage(
@@ -59,23 +51,25 @@ class AppTransformerModel:
 
     @torch.no_grad()
     def decode(self, quant_list):
-        quant_identity = self.post_quant_conv_identity(quant_list[0])
-        quant_frame = self.post_quant_conv_others(quant_list[1])
-        dec = self.img_decoder(quant_identity, quant_frame)
+        quant_identity = self.vq_decompose_model.post_quant_conv_identity(quant_list[0])
+        quant_frame = self.vq_decompose_model.post_quant_conv_others(quant_list[1])
+        dec = self.vq_decompose_model.decoder(quant_identity, quant_frame)
         return dec
 
     @torch.no_grad()
     def decode_image_indices(self, quant_identity, quant_frame):
-        self.quant_identity = self.quantize_identity.get_codebook_entry(
-            quant_identity,
-            (
-                quant_identity.size(0),
-                self.shape[0],
-                self.shape[1],
-                self.opt["img_z_channels"],
-            ),
+        self.quant_identity = (
+            self.vq_decompose_model.quantize_identity.get_codebook_entry(
+                quant_identity,
+                (
+                    quant_identity.size(0),
+                    self.shape[0],
+                    self.shape[1],
+                    self.opt["img_z_channels"],
+                ),
+            )
         )
-        self.quant_frame = self.quantize_others.get_codebook_entry(
+        self.quant_frame = self.vq_decompose_model.quantize_others.get_codebook_entry(
             quant_frame,
             (
                 quant_frame.size(0),
