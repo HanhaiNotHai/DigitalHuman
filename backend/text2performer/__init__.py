@@ -33,7 +33,7 @@ class Text2Performer:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         vq_decompose_model = VQGANDecomposeModel(
-            parse('./text2performer/configs/vqgan/vqgan_decompose_high_res.yml'), device
+            parse('./text2performer/configs/vqgan/vqgan_decompose_high_res.yml')
         )
 
         language_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -55,6 +55,8 @@ class Text2Performer:
             language_model,
             device,
         )
+
+        torch.cuda.empty_cache()
 
     def save_num_appearance(self) -> None:
         with open(self.num_appearance_file, 'wb') as f:
@@ -142,6 +144,7 @@ class Text2Performer:
         # TODO 爆显存 总共56张 但是原代码只搞8张 这一步有必要？如果要的话记得改save_output_frames
         # self.motion_model.refine_synthesized(self.x_identity, f'{seq_idx}_interpolated')
 
+    @torch.no_grad()
     def generate_appearance(self, input_appearance: str) -> str:
         # 增加外观数量
         self.num_appearance += 1
@@ -157,9 +160,11 @@ class Text2Performer:
         # 设置外观文件名
         appearance_file_name = f'{self.appearance_dir}/exampler.png'
         # 从模型中采样外观
+        self.app_model.to('cuda')
         self.x_identity, self.x_pose = self.app_model.sample_appearance(
             [input_appearance], appearance_file_name
         )
+        self.app_model.to('cpu')
         # 返回外观文件的绝对路径
         return os.path.abspath(appearance_file_name)
 
@@ -223,7 +228,10 @@ class Text2Performer:
 
         return os.path.abspath(h264video_file_name)
 
+    @torch.no_grad()
     def generate_motion(self, input_motion: str) -> str:
+        self.motion_model.to('cuda')
+
         # 生成运动视频
         self.num_motion += 1
         self.motion_dir = f'{self.appearance_dir}/motion{self.num_motion:03d}'
@@ -256,9 +264,14 @@ class Text2Performer:
             self.inter_sequence_inter(i, i + 1)
 
         # 生成最终的视频
-        return self.generate_video(False)
+        video_path = self.generate_video(False)
+        self.motion_model.to('cpu')
+        return video_path
 
+    @torch.no_grad()
     def interpolate(self) -> str:
+        self.motion_model.to('cuda')
+
         # 遍历输入运动序列
         for i in range(self.num_input_motion - 1):
             # 在序列中进行内部插值
@@ -269,7 +282,9 @@ class Text2Performer:
         self.intra_sequence_inter(self.num_input_motion - 1)
 
         # 生成视频
-        return self.generate_video(True)
+        video_path = self.generate_video(True)
+        self.motion_model.to('cpu')
+        return video_path
 
 
 text2performer = Text2Performer()

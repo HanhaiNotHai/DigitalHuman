@@ -1,3 +1,5 @@
+from typing import Literal
+
 import numpy as np
 import torch
 import torch.distributions as dists
@@ -34,7 +36,7 @@ class AppTransformerModel:
             embd_pdrop=opt['embd_pdrop'],
             resid_pdrop=opt['resid_pdrop'],
             attn_pdrop=opt['attn_pdrop'],
-        ).to(self.device)
+        )
 
         self.shape = tuple(opt['latent_shape'])
 
@@ -48,6 +50,15 @@ class AppTransformerModel:
             torch.load(opt['pretrained_sampler']), strict=True
         )
         self._denoise_fn.eval()
+
+    def to(self, device: Literal['cpu', 'cuda']) -> None:
+        if device == 'cpu':
+            self.vq_decompose_model.to('cpu')
+            self._denoise_fn.to('cpu')
+            torch.cuda.empty_cache()
+        else:
+            self.vq_decompose_model.to(self.device)
+            self._denoise_fn.to(self.device)
 
     @torch.no_grad()
     def decode(self, quant_list):

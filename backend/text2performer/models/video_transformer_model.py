@@ -1,6 +1,6 @@
-import logging
 import random
 from collections import defaultdict, deque
+from typing import Literal
 
 import torch
 from sentence_transformers import SentenceTransformer
@@ -8,8 +8,6 @@ from torch import Tensor
 
 from .archs.dalle_transformer_arch import NonCausalTransformerLanguage
 from .vqgan_decompose_model import VQGANDecomposeModel
-
-logger = logging.getLogger('base')
 
 
 class VideoTransformerModel:
@@ -40,7 +38,7 @@ class VideoTransformerModel:
             final_proj=opt['final_proj'],
             normformer=opt['normformer'],
             rotary_emb=opt['rotary_emb'],
-        ).to(self.device)
+        )
 
         self.shape = tuple(opt['latent_shape'])
         self.single_len = self.shape[0] * self.shape[1]
@@ -59,6 +57,15 @@ class VideoTransformerModel:
         self.sampler.eval()
 
         self.output_dict: defaultdict[str, list[Tensor]] = defaultdict(list)
+
+    def to(self, device: Literal['cpu', 'cuda']) -> None:
+        if device == 'cpu':
+            self.vq_decompose_model.to('cpu')
+            self.sampler.to('cpu')
+            torch.cuda.empty_cache()
+        else:
+            self.vq_decompose_model.to(self.device)
+            self.sampler.to(self.device)
 
     def save_output_frames(
         self, output_frames: Tensor, save_key: int | str, idx: int | None = None

@@ -10,7 +10,7 @@ from .archs.vqgan_arch import (
 
 class VQGANDecomposeModel(nn.Module):
 
-    def __init__(self, opt, device: torch.device):
+    def __init__(self, opt):
         super().__init__()
 
         self.encoder = EncoderDecomposeBaseDownOthersDoubleIdentity(
@@ -24,7 +24,7 @@ class VQGANDecomposeModel(nn.Module):
             z_channels=opt['z_channels'],
             double_z=opt['double_z'],
             dropout=opt['dropout'],
-        ).to(device)
+        )
         self.decoder = DecoderUpOthersDoubleIdentity(
             in_channels=opt['in_channels'],
             resolution=opt['resolution'],
@@ -38,26 +38,26 @@ class VQGANDecomposeModel(nn.Module):
             dropout=opt['dropout'],
             resamp_with_conv=True,
             give_pre_end=False,
-        ).to(device)
+        )
         self.quantize_identity = VectorQuantizer(
             opt['n_embed'], opt['embed_dim'], beta=0.25
-        ).to(device)
+        )
         self.quant_conv_identity = torch.nn.Conv2d(
             opt["z_channels"], opt['embed_dim'], 1
-        ).to(device)
+        )
         self.post_quant_conv_identity = torch.nn.Conv2d(
             opt['embed_dim'], opt["z_channels"], 1
-        ).to(device)
+        )
 
         self.quantize_others = VectorQuantizer(
             opt['n_embed'], opt['embed_dim'] // 2, beta=0.25
-        ).to(device)
+        )
         self.quant_conv_others = torch.nn.Conv2d(
             opt["z_channels"] // 2, opt['embed_dim'] // 2, 1
-        ).to(device)
+        )
         self.post_quant_conv_others = torch.nn.Conv2d(
             opt['embed_dim'] // 2, opt["z_channels"] // 2, 1
-        ).to(device)
+        )
 
         self.load_state_dict(torch.load(opt['pretrained_models']))
         self.eval()
