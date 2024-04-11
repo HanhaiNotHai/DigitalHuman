@@ -20,7 +20,7 @@ const video = ref(null)
 
 function generate_appearance() {
   axios_instance
-    .post('/generate_appearance', {
+    .post('/text2performer/generate_appearance', {
       input_appearance: input_appearance.value
     })
     .then((res) => {
@@ -30,7 +30,7 @@ function generate_appearance() {
 
 function generate_motion() {
   axios_instance
-    .post('/generate_motion', {
+    .post('/text2performer/generate_motion', {
       input_motion: input_motion.value
     })
     .then((res) => {
@@ -39,7 +39,7 @@ function generate_motion() {
 }
 
 function interpolate() {
-  axios_instance.get('/interpolate').then((res) => {
+  axios_instance.get('/text2performer/interpolate').then((res) => {
     video.value.src = root_prefix + res.data
   })
 }

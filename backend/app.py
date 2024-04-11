@@ -30,18 +30,18 @@ def favicon() -> Response:
     )
 
 
-@app.route('/generate_appearance', methods=['POST'])
-def generate_appearance() -> str:
+@app.route('/text2performer/generate_appearance', methods=['POST'])
+def text2performer_generate_appearance() -> str:
     return text2performer.generate_appearance(request.json['input_appearance'])
 
 
-@app.route('/generate_motion', methods=['POST'])
-def generate_motion() -> str:
+@app.route('/text2performer/generate_motion', methods=['POST'])
+def text2performer_generate_motion() -> str:
     return text2performer.generate_motion(request.json['input_motion'])
 
 
-@app.route('/interpolate')
-def interpolate() -> str:
+@app.route('/text2performer/interpolate')
+def text2performer_interpolate() -> str:
     return text2performer.interpolate()
 
 
