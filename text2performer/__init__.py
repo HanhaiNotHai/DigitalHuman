@@ -221,7 +221,7 @@ class Text2Performer:
         h264video_file_name = f'{self.motion_dir}/video{suf}_h264.mp4'
         ffmpeg_log = f'{self.motion_dir}/ffmpeg{suf}.log'
         convert2h264cmd = (
-            f'ffmpeg -y -i {video_file_name} {h264video_file_name} > {ffmpeg_log} 2>&1'
+            f'/usr/bin/ffmpeg -y -i {video_file_name} {h264video_file_name} > {ffmpeg_log} 2>&1'
         )
         os.system(convert2h264cmd)
 
