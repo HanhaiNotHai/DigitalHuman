@@ -1,11 +1,13 @@
+from typing import Literal
+
 import numpy as np
 import torch
 import torch.distributions as dists
 from sentence_transformers import SentenceTransformer
 from torchvision.utils import save_image
 
-from models.archs.transformer_arch import TransformerLanguage
-from models.vqgan_decompose_model import VQGANDecomposeModel
+from .archs.transformer_arch import TransformerLanguage
+from .vqgan_decompose_model import VQGANDecomposeModel
 
 
 class AppTransformerModel:
@@ -22,15 +24,7 @@ class AppTransformerModel:
         self.device = device
 
         # VQVAE for image
-        self.img_encoder = vq_decompose_model.encoder
-        self.img_decoder = vq_decompose_model.decoder
-        self.quantize_identity = vq_decompose_model.quantize_identity
-        self.quant_conv_identity = vq_decompose_model.quant_conv_identity
-        self.post_quant_conv_identity = vq_decompose_model.post_quant_conv_identity
-
-        self.quantize_others = vq_decompose_model.quantize_others
-        self.quant_conv_others = vq_decompose_model.quant_conv_others
-        self.post_quant_conv_others = vq_decompose_model.post_quant_conv_others
+        self.vq_decompose_model = vq_decompose_model
 
         # define sampler
         self._denoise_fn = TransformerLanguage(
@@ -42,7 +36,7 @@ class AppTransformerModel:
             embd_pdrop=opt['embd_pdrop'],
             resid_pdrop=opt['resid_pdrop'],
             attn_pdrop=opt['attn_pdrop'],
-        ).to(self.device)
+        )
 
         self.shape = tuple(opt['latent_shape'])
 
@@ -52,25 +46,43 @@ class AppTransformerModel:
 
         self.language_model = language_model
 
+        self._denoise_fn.load_state_dict(
+            torch.load(opt['pretrained_sampler'], map_location='cpu'), strict=True
+        )
+        self._denoise_fn.eval()
+
+    def to(self, device: Literal['cpu', 'cuda']) -> None:
+        if device == 'cpu':
+            self.vq_decompose_model.to('cpu')
+            self._denoise_fn.to('cpu')
+            self.language_model.to('cpu')
+            torch.cuda.empty_cache()
+        else:
+            self.vq_decompose_model.to(self.device)
+            self._denoise_fn.to(self.device)
+            self.language_model.to(self.device)
+
     @torch.no_grad()
     def decode(self, quant_list):
-        quant_identity = self.post_quant_conv_identity(quant_list[0])
-        quant_frame = self.post_quant_conv_others(quant_list[1])
-        dec = self.img_decoder(quant_identity, quant_frame)
+        quant_identity = self.vq_decompose_model.post_quant_conv_identity(quant_list[0])
+        quant_frame = self.vq_decompose_model.post_quant_conv_others(quant_list[1])
+        dec = self.vq_decompose_model.decoder(quant_identity, quant_frame)
         return dec
 
     @torch.no_grad()
     def decode_image_indices(self, quant_identity, quant_frame):
-        self.quant_identity = self.quantize_identity.get_codebook_entry(
-            quant_identity,
-            (
-                quant_identity.size(0),
-                self.shape[0],
-                self.shape[1],
-                self.opt["img_z_channels"],
-            ),
+        self.quant_identity = (
+            self.vq_decompose_model.quantize_identity.get_codebook_entry(
+                quant_identity,
+                (
+                    quant_identity.size(0),
+                    self.shape[0],
+                    self.shape[1],
+                    self.opt["img_z_channels"],
+                ),
+            )
         )
-        self.quant_frame = self.quantize_others.get_codebook_entry(
+        self.quant_frame = self.vq_decompose_model.quantize_others.get_codebook_entry(
             quant_frame,
             (
                 quant_frame.size(0),
@@ -181,8 +193,3 @@ class AppTransformerModel:
         img_cat = (pred_img.detach() + 1) / 2
         img_cat = img_cat.clamp_(0, 1)
         save_image(img_cat, save_path, nrow=1, padding=4)
-
-    def load_network(self):
-        checkpoint = torch.load(self.opt['pretrained_sampler'])
-        self._denoise_fn.load_state_dict(checkpoint, strict=True)
-        self._denoise_fn.eval()
