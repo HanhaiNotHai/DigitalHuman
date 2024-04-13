@@ -59,5 +59,5 @@ class VQGANDecomposeModel(nn.Module):
             opt['embed_dim'] // 2, opt["z_channels"] // 2, 1
         )
 
-        self.load_state_dict(torch.load(opt['pretrained_models']))
+        self.load_state_dict(torch.load(opt['pretrained_models'], map_location='cpu'))
         self.eval()

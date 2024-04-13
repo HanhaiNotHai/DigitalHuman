@@ -37,7 +37,7 @@ class Text2Performer:
             parse('./text2performer/configs/vqgan/vqgan_decompose_high_res.yml')
         )
 
-        language_model = SentenceTransformer('all-MiniLM-L6-v2')
+        language_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
 
         # 创建外观模型
         self.app_model = AppTransformerModel(
@@ -56,8 +56,6 @@ class Text2Performer:
             language_model,
             device,
         )
-
-        torch.cuda.empty_cache()
 
     def save_num_appearance(self) -> None:
         with open(self.num_appearance_file, 'wb') as f:

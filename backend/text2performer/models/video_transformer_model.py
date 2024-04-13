@@ -49,10 +49,7 @@ class VideoTransformerModel:
 
         self.language_model = language_model
 
-        checkpoint = torch.load(
-            opt['pretrained_sampler'],
-            map_location=lambda storage, loc: storage.cuda(torch.cuda.current_device()),
-        )
+        checkpoint = torch.load(opt['pretrained_sampler'], map_location='cpu')
         self.sampler.load_state_dict(checkpoint, strict=True)
         self.sampler.eval()
 
@@ -62,10 +59,12 @@ class VideoTransformerModel:
         if device == 'cpu':
             self.vq_decompose_model.to('cpu')
             self.sampler.to('cpu')
+            self.language_model.to('cpu')
             torch.cuda.empty_cache()
         else:
             self.vq_decompose_model.to(self.device)
             self.sampler.to(self.device)
+            self.language_model.to(self.device)
 
     def save_output_frames(
         self, output_frames: Tensor, save_key: int | str, idx: int | None = None

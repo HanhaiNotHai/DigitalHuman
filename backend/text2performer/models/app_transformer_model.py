@@ -47,7 +47,7 @@ class AppTransformerModel:
         self.language_model = language_model
 
         self._denoise_fn.load_state_dict(
-            torch.load(opt['pretrained_sampler']), strict=True
+            torch.load(opt['pretrained_sampler'], map_location='cpu'), strict=True
         )
         self._denoise_fn.eval()
 
@@ -55,10 +55,12 @@ class AppTransformerModel:
         if device == 'cpu':
             self.vq_decompose_model.to('cpu')
             self._denoise_fn.to('cpu')
+            self.language_model.to('cpu')
             torch.cuda.empty_cache()
         else:
             self.vq_decompose_model.to(self.device)
             self._denoise_fn.to(self.device)
+            self.language_model.to(self.device)
 
     @torch.no_grad()
     def decode(self, quant_list):
