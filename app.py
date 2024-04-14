@@ -1,6 +1,12 @@
 import gradio as gr
+import numpy as np
+from PIL import Image
 
-from text2performer import text2performer
+from magicanimate import MagicAnimate
+from text2performer import Text2Performer
+
+text2performer = Text2Performer()
+animator = MagicAnimate()
 
 input_appearance = 'The dress the person wears has long sleeves and it is of short length. Its texture is pure color.'
 input_motion = '''The lady moves to the right.
@@ -9,6 +15,7 @@ She turns right from the front to the side.
 She turns right from the side to the back.'''
 
 with gr.Blocks() as demo:
+    ########## text2performer ##########
     with gr.Row():
         with gr.Column():
             input_appearance = gr.Textbox(
@@ -54,6 +61,64 @@ with gr.Blocks() as demo:
         text2performer.interpolate,
         None,
         motion,
+    )
+
+    ########## magic animate ##########
+    animation = gr.Video(format="mp4", label="Animation Results", autoplay=True)
+
+    with gr.Row():
+        reference_image = gr.Image(label="Reference Image")
+        motion_sequence = gr.Video(format="mp4", label="Motion Sequence")
+
+        with gr.Column():
+            random_seed = gr.Textbox(label="Random seed", value=1, info="default: -1")
+            sampling_steps = gr.Textbox(
+                label="Sampling steps", value=25, info="default: 25"
+            )
+            guidance_scale = gr.Textbox(
+                label="Guidance scale", value=7.5, info="default: 7.5"
+            )
+            submit = gr.Button("Animate")
+
+    def read_image(image, size=512):
+        return np.array(Image.fromarray(image).resize((size, size)))
+
+    # when `first_frame` is updated
+    reference_image.upload(read_image, reference_image, reference_image)
+    # when the `submit` button is clicked
+    submit.click(
+        animator,
+        [reference_image, motion_sequence, random_seed, sampling_steps, guidance_scale],
+        animation,
+    )
+
+    # Examples
+    gr.Markdown("## Examples")
+    gr.Examples(
+        examples=[
+            [
+                "magicanimate/inputs/applications/source_image/monalisa.png",
+                "magicanimate/inputs/applications/driving/densepose/running.mp4",
+            ],
+            [
+                "magicanimate/inputs/applications/source_image/demo4.png",
+                "magicanimate/inputs/applications/driving/densepose/demo4.mp4",
+            ],
+            [
+                "magicanimate/inputs/applications/source_image/dalle2.jpeg",
+                "magicanimate/inputs/applications/driving/densepose/running2.mp4",
+            ],
+            [
+                "magicanimate/inputs/applications/source_image/dalle8.jpeg",
+                "magicanimate/inputs/applications/driving/densepose/dancing2.mp4",
+            ],
+            [
+                "magicanimate/inputs/applications/source_image/multi1_source.png",
+                "magicanimate/inputs/applications/driving/densepose/multi_dancing.mp4",
+            ],
+        ],
+        inputs=[reference_image, motion_sequence],
+        outputs=animation,
     )
 
 demo.launch()

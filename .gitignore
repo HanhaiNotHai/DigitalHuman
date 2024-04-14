@@ -1,4 +1,6 @@
 .vscode/
+magicanimate/outputs/
+magicanimate/pretrained_models/
 sentence-transformers/
 text2performer/pretrained_models/
 text2performer/results/
