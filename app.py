@@ -63,9 +63,9 @@ with gr.Blocks() as demo:
         motion,
     )
 
-    ########## magic animate ##########
-    animation = gr.Video(format="mp4", label="Animation Results", autoplay=True)
+    text2performer2magicanimate = gr.Button('text2performer -> magic animate')
 
+    ########## magic animate ##########
     with gr.Row():
         reference_image = gr.Image(label="Reference Image")
         motion_sequence = gr.Video(format="mp4", label="Motion Sequence")
@@ -80,11 +80,19 @@ with gr.Blocks() as demo:
             )
             submit = gr.Button("Animate")
 
-    def read_image(image, size=512):
-        return np.array(Image.fromarray(image).resize((size, size)))
+    animation = gr.Video(format="mp4", label="Animation Results", autoplay=True)
 
+    text2performer2magicanimate.click(
+        lambda image: Image.fromarray(image).crop((0, 0, 256, 256)).resize((512, 512)),
+        appearance,
+        reference_image,
+    )
     # when `first_frame` is updated
-    reference_image.upload(read_image, reference_image, reference_image)
+    reference_image.upload(
+        lambda image: Image.fromarray(image).resize((512, 512)),
+        reference_image,
+        reference_image,
+    )
     # when the `submit` button is clicked
     submit.click(
         animator,
