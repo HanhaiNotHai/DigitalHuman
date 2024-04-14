@@ -36,7 +36,7 @@ import torch
 import torch.distributed as dist
 from diffusers.configuration_utils import FrozenDict
 from diffusers.models import AutoencoderKL
-from diffusers.pipeline_utils import DiffusionPipeline
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 from diffusers.schedulers import (
     DDIMScheduler,
     DPMSolverMultistepScheduler,
@@ -761,7 +761,7 @@ class AnimationPipeline(DiffusionPipeline):
                 init_latents, "(b f) c h w -> b c f h w", f=video_length
             )
         else:
-            num_channels_latents = self.unet.in_channels
+            num_channels_latents = self.unet.config.in_channels
             latents = self.prepare_latents(
                 batch_size * num_videos_per_prompt,
                 num_channels_latents,

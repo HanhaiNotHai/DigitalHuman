@@ -248,6 +248,7 @@ class ControlNetModel(ModelMixin, ConfigMixin):
                 only_cross_attention=only_cross_attention[i],
                 upcast_attention=upcast_attention,
                 resnet_time_scale_shift=resnet_time_scale_shift,
+                attention_head_dim=attention_head_dim[i],
             )
             self.down_blocks.append(down_block)
 

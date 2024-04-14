@@ -17,11 +17,11 @@ from PIL import Image
 from tqdm import tqdm
 
 
-def save_videos_grid(videos: torch.Tensor, path: str, rescale=False, n_rows=6, fps=25):
+def save_videos_grid(videos: torch.Tensor, path: str, rescale=False, nrow=3, fps=25):
     videos = rearrange(videos, "b c t h w -> t b c h w")
     outputs = []
     for x in videos:
-        x = torchvision.utils.make_grid(x, nrow=n_rows)
+        x = torchvision.utils.make_grid(x, nrow, padding=0)
         x = x.transpose(0, 1).transpose(1, 2).squeeze(-1)
         if rescale:
             x = (x + 1.0) / 2.0  # -1,1 -> 0,1

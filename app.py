@@ -1,5 +1,4 @@
 import gradio as gr
-import imageio
 import numpy as np
 from PIL import Image
 
@@ -81,16 +80,9 @@ with gr.Blocks() as demo:
             )
             submit = gr.Button("Animate")
 
-    def read_video(video):
-        reader = imageio.get_reader(video)
-        fps = reader.get_meta_data()['fps']
-        return video
-
     def read_image(image, size=512):
         return np.array(Image.fromarray(image).resize((size, size)))
 
-    # when user uploads a new video
-    motion_sequence.upload(read_video, motion_sequence, motion_sequence)
     # when `first_frame` is updated
     reference_image.upload(read_image, reference_image, reference_image)
     # when the `submit` button is clicked
