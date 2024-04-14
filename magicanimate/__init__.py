@@ -12,6 +12,7 @@ import datetime
 import inspect
 import os
 from collections import OrderedDict
+from typing import Literal
 
 import numpy as np
 import torch
@@ -67,7 +68,7 @@ class MagicAnimate:
             )
         self.appearance_encoder = AppearanceEncoderModel.from_pretrained(
             config.pretrained_appearance_encoder_path, subfolder="appearance_encoder"
-        ).cuda()
+        )
         self.reference_control_writer = ReferenceAttentionControl(
             self.appearance_encoder,
             do_classifier_free_guidance=True,
@@ -90,10 +91,6 @@ class MagicAnimate:
         ### Load controlnet
         controlnet = ControlNetModel.from_pretrained(config.pretrained_controlnet_path)
 
-        vae.to(torch.float16)
-        unet.to(torch.float16)
-        text_encoder.to(torch.float16)
-        controlnet.to(torch.float16)
         self.appearance_encoder.to(torch.float16)
 
         unet.enable_xformers_memory_efficient_attention()
@@ -110,7 +107,7 @@ class MagicAnimate:
                 **OmegaConf.to_container(inference_config.noise_scheduler_kwargs)
             ),
             # NOTE: UniPCMultistepScheduler
-        ).to("cuda")
+        )
 
         # 1. unet ckpt
         # 1.1 motion module
@@ -151,11 +148,20 @@ class MagicAnimate:
             del _tmp_
         del motion_module_state_dict
 
-        self.pipeline.to("cuda")
         self.L = config.L
 
         print("Initialization Done!")
 
+    def to(self, device: Literal['cpu', 'cuda']) -> None:
+        if device == 'cpu':
+            self.appearance_encoder.cpu()
+            self.pipeline.to('cpu', torch.float)  # NOTE: float16 to cpu会警告
+            torch.cuda.empty_cache()
+        else:
+            self.appearance_encoder.cuda()
+            self.pipeline.to('cuda', torch.float16)
+
+    @torch.no_grad()
     def __call__(
         self,
         source_image,
@@ -165,6 +171,8 @@ class MagicAnimate:
         guidance_scale=7.5,
         size=512,
     ):
+        self.to('cuda')
+
         prompt = n_prompt = ""
         random_seed = int(random_seed)
         step = int(step)
@@ -237,5 +245,7 @@ class MagicAnimate:
 
         os.makedirs(savedir, exist_ok=True)
         save_videos_grid(samples_per_video, animation_path)
+
+        self.to('cpu')
 
         return animation_path
