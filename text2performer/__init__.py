@@ -285,6 +285,3 @@ class Text2Performer:
         video_path = self.generate_video(True)
         self.motion_model.to('cpu')
         return video_path
-
-
-text2performer = Text2Performer()
