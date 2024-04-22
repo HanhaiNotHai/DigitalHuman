@@ -1,4 +1,5 @@
 import gradio as gr
+import torch
 from PIL import Image
 
 from magicanimate import MagicAnimate
@@ -14,6 +15,8 @@ She turns right from the front to the side.
 She turns right from the side to the back.'''
 
 with gr.Blocks() as demo:
+    empty_cache = gr.Button('torch.cuda.empty_cache()')
+
     ########## text2performer ##########
     with gr.Row():
         with gr.Column():
@@ -64,6 +67,8 @@ with gr.Blocks() as demo:
             submit = gr.Button('Animate')
 
     animation = gr.Video(format='mp4', label='Animation Results', autoplay=True)
+
+    empty_cache.click(torch.cuda.empty_cache)
 
     ########## text2performer ##########
     generate_appearance.click(
