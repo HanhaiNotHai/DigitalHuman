@@ -3,8 +3,10 @@ import torch
 from PIL import Image
 
 from magicanimate import MagicAnimate
+from styleganhuman import StyleGANHuman
 from text2performer import Text2Performer
 
+style_gan_human = StyleGANHuman()
 text2performer = Text2Performer()
 magic_animate = MagicAnimate()
 
@@ -16,6 +18,16 @@ She turns right from the side to the back.'''
 
 with gr.Blocks() as demo:
     empty_cache = gr.Button('torch.cuda.empty_cache()')
+
+    ########## StyleGAN-Human ##########
+    with gr.Row():
+        with gr.Column():
+            seed = gr.Slider(label='Seed', minimum=0, maximum=100000, step=1, value=0)
+            truncation_psi = gr.Slider(
+                label='Truncation psi', minimum=0, maximum=2, step=0.05, value=0.7
+            )
+            style_gan_human_generate_image = gr.Button('style_gan_human_generate_image')
+        style_gan_human_image = gr.Image(interactive=True)
 
     ########## text2performer ##########
     with gr.Row():
@@ -69,6 +81,13 @@ with gr.Blocks() as demo:
     animation = gr.Video(format='mp4', label='Animation Results', autoplay=True)
 
     empty_cache.click(torch.cuda.empty_cache)
+
+    ########## StyleGAN-Human ##########
+    style_gan_human_generate_image.click(
+        style_gan_human.generate_image,
+        [seed, truncation_psi],
+        style_gan_human_image,
+    )
 
     ########## text2performer ##########
     generate_appearance.click(
