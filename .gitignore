@@ -2,6 +2,7 @@
 magicanimate/outputs/
 magicanimate/pretrained_models/
 sentence-transformers/
+styleganhuman/pretrained_models
 text2performer/pretrained_models/
 text2performer/results/
 test*

@@ -148,6 +148,7 @@ class MagicAnimate:
             del _tmp_
         del motion_module_state_dict
 
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.L = config.L
 
         print("Initialization Done!")
@@ -158,8 +159,8 @@ class MagicAnimate:
             self.pipeline.to('cpu', torch.float)  # NOTE: float16 to cpu会警告
             torch.cuda.empty_cache()
         else:
-            self.appearance_encoder.cuda()
-            self.pipeline.to('cuda', torch.float16)
+            self.appearance_encoder.to(self.device)
+            self.pipeline.to(self.device, torch.float16)
 
     @torch.no_grad()
     def __call__(
@@ -205,7 +206,7 @@ class MagicAnimate:
                 ((0, self.L - control.shape[0] % self.L), (0, 0), (0, 0), (0, 0)),
                 mode='edge',
             )
-        generator = torch.Generator(device=torch.device("cuda:0"))
+        generator = torch.Generator(self.device)
         generator.manual_seed(torch.initial_seed())
         sample = self.pipeline(
             prompt,
