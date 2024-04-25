@@ -6,7 +6,7 @@ from magicanimate import MagicAnimate
 from text2performer import Text2Performer
 
 text2performer = Text2Performer()
-animator = MagicAnimate()
+magic_animate = MagicAnimate()
 
 input_appearance = 'The dress the person wears has long sleeves and it is of short length. Its texture is pure color.'
 input_motion = '''The lady moves to the right.
@@ -102,7 +102,7 @@ with gr.Blocks() as demo:
     )
     # when the `submit` button is clicked
     submit.click(
-        animator,
+        magic_animate,
         [reference_image, motion_sequence, random_seed, sampling_steps, guidance_scale],
         animation,
     )
