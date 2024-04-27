@@ -40,9 +40,7 @@ class StyleGANHuman:
         z = self.generate_z(self.model.z_dim, seed, self.device)
         label = torch.zeros([1, self.model.c_dim], device=self.device)
 
-        out: torch.Tensor = self.model(
-            z, label, truncation_psi=truncation_psi, force_fp32=True
-        )
+        out: torch.Tensor = self.model(z, label, truncation_psi, force_fp32=True)
         out = (out.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
 
         self.to('cpu')
