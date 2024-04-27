@@ -162,7 +162,7 @@ class MagicAnimate:
             self.appearance_encoder.to(self.device)
             self.pipeline.to(self.device, torch.float16)
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def __call__(
         self,
         source_image,

@@ -143,7 +143,7 @@ class Text2Performer:
         # TODO 爆显存 总共56张 但是原代码只搞8张 这一步有必要？如果要的话记得改save_output_frames
         # self.motion_model.refine_synthesized(self.x_identity, f'{seq_idx}_interpolated')
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def generate_appearance(self, input_appearance: str) -> str:
         # 增加外观数量
         self.num_appearance += 1
@@ -220,14 +220,12 @@ class Text2Performer:
 
         h264video_file_name = f'{self.motion_dir}/video{suf}_h264.mp4'
         ffmpeg_log = f'{self.motion_dir}/ffmpeg{suf}.log'
-        convert2h264cmd = (
-            f'/usr/bin/ffmpeg -y -i {video_file_name} {h264video_file_name} > {ffmpeg_log} 2>&1'
-        )
+        convert2h264cmd = f'/usr/bin/ffmpeg -y -i {video_file_name} {h264video_file_name} > {ffmpeg_log} 2>&1'
         os.system(convert2h264cmd)
 
         return os.path.abspath(h264video_file_name)
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def generate_motion(self, input_motion: str) -> str:
         self.motion_model.to('cuda')
         self.motion_model.output_dict = defaultdict(list)
@@ -268,7 +266,7 @@ class Text2Performer:
         self.motion_model.to('cpu')
         return video_path
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def interpolate(self) -> str:
         self.motion_model.to('cuda')
 
